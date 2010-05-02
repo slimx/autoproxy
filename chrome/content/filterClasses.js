@@ -129,6 +129,8 @@ Filter.fromObject = function(obj)
       ret.hitCount = parseInt(obj.hitCount) || 0;
     if ("lastHit" in obj)
       ret.lastHit = parseInt(obj.lastHit) || 0;
+    if("proxy" in obj)
+    ret.proxy = obj.proxy
   }
   return ret;
 }
@@ -214,12 +216,13 @@ ActiveFilter.prototype =
    */
   lastHit: 0,
 
+    proxy:null,
   /**
    * See Filter.serialize()
    */
   serialize: function(buffer)
   {
-    if (this.disabled || this.hitCount || this.lastHit)
+		if (this.disabled || this.hitCount || this.lastHit ||this.proxy)
     {
       Filter.prototype.serialize.call(this, buffer);
       if (this.disabled)
@@ -228,6 +231,8 @@ ActiveFilter.prototype =
         buffer.push("hitCount=" + this.hitCount);
       if (this.lastHit)
         buffer.push("lastHit=" + this.lastHit);
+      if(this.proxy)
+        buffer.push("proxy="+this.proxy);
     }
   }
 };

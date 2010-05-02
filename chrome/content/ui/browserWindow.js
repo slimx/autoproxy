@@ -243,11 +243,15 @@ function aupReloadPrefs() {
   }
 
     aup.proxyMapString = {};
+    aup.proxyMap = {};
     var proxies = prefs.customProxy.split("$");
     if (proxies == "") proxies = prefs.knownProxy.split("$");
     for each (let proxy in proxies) {
         if (proxy == "") continue;
         var list = proxy.split(";");
+        if ( list[1] == "" ) list[1] = "127.0.0.1";
+        if ( list[3] == "" ) list[3] = "http";
+        aup.proxyMap[list[0]] = proxyService.newProxyInfo(list[3], list[1], list[2], 1, 0, null);
         aup.proxyMapString[list[0]] = proxy;
     }
 }

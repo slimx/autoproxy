@@ -112,8 +112,20 @@ var policy =
   applyFilter: function(pS, uri, proxy)
   {
     if (uri.schemeIs("feed")) return pS.newProxyInfo("direct", "", -1, 0, 0, null);
-    if (this.shouldProxy(uri)) return this.defaultProxy;
-    return this.fallBackProxy;
+        var match = this.shouldProxy(uri);
+        if(match)
+        {
+            if(match instanceof WhitelistFilter){
+                return pS.newProxyInfo("direct", "", -1, 0, 0, null);
+            }
+            if(match.proxy&&match.proxy!="")
+            {
+            var proxyInfo = aup.proxyMap[match.proxy];
+            return proxyInfo?proxyInfo:this.defaultProxy;
+            }
+            else return this.defaultProxy;
+        }
+	    return this.fallBackProxy;
   },
 
   /**
@@ -162,7 +174,8 @@ var policy =
     if (match)
       filterStorage.increaseHitCount(match);
 
-    return match && !(match instanceof WhitelistFilter);
+    //return match && !(match instanceof WhitelistFilter);
+    return match?match:false;
   },
 
   /**

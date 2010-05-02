@@ -1016,6 +1016,7 @@ function fillViewPopup(/**String*/prefix)
 {
   E(prefix + "view-filter").setAttribute("checked", !E("col-filter").hidden);
   E(prefix + "view-slow").setAttribute("checked", !E("col-slow").hidden);
+  E(prefix + "view-special").setAttribute("checked", !E("col-specialProxy").hidden);
   E(prefix + "view-enabled").setAttribute("checked", !E("col-enabled").hidden);
   E(prefix + "view-hitcount").setAttribute("checked", !E("col-hitcount").hidden);
   E(prefix + "view-lasthit").setAttribute("checked", !E("col-lasthit").hidden);
@@ -1166,6 +1167,21 @@ function fillContext()
     E("context-disable").setAttribute("disabled", "true");
   }
 
+    var displayProxyMenu = false;
+    var filters = treeView.getSelectedFilters();
+    if(filters.length<selected.length)displayProxyMenu = true;
+    else{
+    for each(var i in filters)
+    {
+        if(i instanceof aup.WhitelistFilter)
+        {
+            displayProxyMenu = true;
+            break;
+        }
+    }}
+
+    E("context-selectProxy").hidden = displayProxyMenu;
+    E("context-selectProxy").previousSibling.hidden = displayProxyMenu;
   return true;
 }
 
@@ -1439,7 +1455,7 @@ let treeView = {
     col = col.id;
 
     // Only three columns have text
-    if (col != "col-filter" && col != "col-slow" && col != "col-hitcount" && col != "col-lasthit")
+		if (col != "col-filter" && col != "col-slow" && col != "col-hitcount" && col != "col-lasthit" && col != "col-specialProxy")
       return null;
 
     // Don't show text in the edited row
@@ -1458,6 +1474,8 @@ let treeView = {
         return (filter instanceof aup.RegExpFilter && !filter.shortcut && !filter.disabled && !subscription.disabled ? "!" : null);
       else if (filter instanceof aup.ActiveFilter)
       {
+        if(col=="col-specialProxy")
+            return filter.proxy;
         if (col == "col-hitcount")
           return filter.hitCount;
         else
@@ -2995,3 +3013,62 @@ let treeView = {
     this.editorDummyInit = (save ? "" : text);
   }
 };
+
+function fillProxyMenu()
+{
+    var group = E("selectProxy-popup");
+    var length = group.children.length;
+    for(var i=0;i<length-2;i++)
+    {
+        group.removeChild(group.lastChild);
+    }
+    var defaultProxy = E("useDefaultProxy").setAttribute("checked",true);
+
+    let filters = treeView.getSelectedFilters(true);
+    if(!filters||!filters[0])return;
+ Components.classes["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService).logStringMessage("222");
+
+    for(var p in aup.proxyMap)
+    {
+        var item=document.createElement("menuitem");
+        item.setAttribute("type","radio");
+        item.setAttribute("label",p);
+        item.setAttribute("value",p);
+        item.setAttribute("name","selectProxy-rg");
+        item.setAttribute("oncommand","changeFilterProxy(event)");
+        
+        if(filters[0].proxy==p)
+        item.setAttribute("checked",true);
+        group.appendChild(item);
+    }
+    
+
+}
+
+function changeFilterProxy(event)
+{
+    let filters = treeView.getSelectedFilters(false);
+
+    if (!filters || !filters[0])return;
+    else
+    {
+
+        for each(var f in filters)
+        {
+            if(event.target.value==f.proxy||f instanceof aup.WhitelistFilter)continue;
+            else
+            {
+                if(event.target.value==""){
+                    delete f.proxy;
+                }
+                else
+                {
+                 f.proxy = event.target.value;
+                }
+            }
+
+        }
+
+    }
+
+}

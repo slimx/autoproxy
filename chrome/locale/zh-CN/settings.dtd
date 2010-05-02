@@ -91,3 +91,8 @@
 <!ENTITY context.disable.label "禁用">
 <!ENTITY apply.label "应用">
 <!ENTITY apply.accesskey "P">
+<!ENTITY context.switchSpecialProxy                  "选择代理">
+<!ENTITY context.switchSpecialProxyDefault                  "默认">
+<!ENTITY proxy.column                  "代理">
+<!ENTITY slow.column                     "Slow filters">
+<!ENTITY slow.accesskey                  "w">

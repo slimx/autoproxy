@@ -112,6 +112,13 @@
     <menuseparator/>
     <menuitem id="context-movegroupup" label="&context.movegroupup.label;" oncommand="treeView.moveSubscription(true)" key="movegroupup-key"/>
     <menuitem id="context-movegroupdown" label="&context.movegroupdown.label;" oncommand="treeView.moveSubscription(false)" key="movegroupdown-key"/>
+    <menuseparator/>
+    <menu id="context-selectProxy" label="&context.switchSpecialProxy;">
+        <menupopup id="selectProxy-popup" onpopupshowing="fillProxyMenu()">
+            <menuitem label="&context.switchSpecialProxyDefault;" type="radio" id="useDefaultProxy" value="" name="selectProxy-rg" oncommand="changeFilterProxy(event)"/>
+            <menuseparator/>
+        </menupopup>
+    </menu>
   </popup>
   <popup id="treecols-context" onpopupshowing="fillViewPopup('context-')"/>
   <tooltip id="tree-tooltip" onpopupshowing="return showTreeTooltip(event)"/>
@@ -156,6 +163,7 @@
       <menupopup id="view-popup" onpopupshowing="fillViewPopup('')">
         <menuitem id="view-filter" label="&filter.column;" accesskey="&filter.accesskey;" type="checkbox" disabled="true"/>
         <menuitem id="view-slow" label="&slow.column;" accesskey="&slow.accesskey;" type="checkbox" oncommand="toggleColumn('col-slow')"/>
+        <menuitem id="view-special" label="&proxy.column;" type="checkbox" oncommand="toggleColumn('col-specialProxy')"/>
         <menuitem id="view-enabled" label="&enabled.column;" accesskey="&enabled.accesskey;" type="checkbox" oncommand="toggleColumn('col-enabled')"/>
         <menuitem id="view-hitcount" label="&hitcount.column;" accesskey="&hitcount.accesskey;" type="checkbox" oncommand="toggleColumn('col-hitcount')"/>
         <menuitem id="view-lasthit" label="&lasthit.column;" accesskey="&lasthit.accesskey;" type="checkbox" oncommand="toggleColumn('col-lasthit')"/>
@@ -210,6 +218,8 @@
         <treecol id="col-filter" label="&filter.column;" primary="true" flex="10" persist="width ordinal sortDirection hidden"/>
         <splitter class="tree-splitter"/>
         <treecol id="col-slow" label="!" flex="0" width="16" persist="width ordinal sortDirection hidden"/>
+        <splitter class="tree-splitter"/>
+        <treecol id="col-specialProxy" label="&proxy.column;" flex="0" persist="width ordinal sortDirection hidden" width="75"/>
         <splitter class="tree-splitter"/>
         <treecol id="col-enabled" label="&enabled.column;" flex="0" persist="width ordinal sortDirection hidden"/>
         <splitter class="tree-splitter"/>

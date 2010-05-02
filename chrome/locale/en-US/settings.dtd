@@ -132,3 +132,6 @@
 
 <!ENTITY apply.label                     "Apply">
 <!ENTITY apply.accesskey                 "P">
+<!ENTITY context.switchSpecialProxy                  "Switch proxy">
+<!ENTITY context.switchSpecialProxyDefault                  "Default">
+<!ENTITY proxy.column                  "Proxy">
