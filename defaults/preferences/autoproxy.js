@@ -29,4 +29,4 @@ pref("extensions.autoproxy.proxyableSchemes", "http https ftp");
 pref("extensions.autoproxy.proxyMode", "auto");
 
 pref("extensions.autoproxy@autoproxy.org.description", "chrome://autoproxy/locale/global.properties");
-
+pref("extensions.autoproxy.middleClick_global",true);
