@@ -53,6 +53,7 @@
       <menuitem id="aup-status-modedisabled" label="&mode.disabled.label;" accesskey="&mode.disabled.accesskey;" type="radio" command="aup-command-modedisabled"/>
       <menuseparator/>
       <menu label="&switchProxy.label;" id="aup-status-switchProxy"/>
+      <menuitem label="&quickAddFilter.label;" command="aup-command-quickAddFilter"/>
       <menuseparator/>
       <menuitem id="aup-status-opensidebar" label="&opensidebar.label;" accesskey="&opensidebar.accesskey;" key="aup-key-sidebar" command="aup-command-sidebar"/>
       <menuitem id="aup-status-closesidebar" label="&closesidebar.label;" accesskey="&closesidebar.accesskey;" key="aup-key-sidebar" command="aup-command-sidebar"/>
@@ -78,6 +79,7 @@
     <command id="aup-command-toggleshowintoolbar"/>
 
     <command id="aup-command-toggleshowinstatusbar"/>
+    <command id="aup-command-quickAddFilter"/>
   </commandset>
 
   <statusbarpanel id="aup-status" context="aup-status-popup">

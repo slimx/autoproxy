@@ -46,6 +46,7 @@ let eventHandlers = [
   ["aup-command-modedisabled", "command", function() { switchToMode('disabled'); }],
   ["aup-status", "click", aupClickHandler],
   ["aup-toolbarbutton", "command", function(event) { if (event.eventPhase == event.AT_TARGET) aupCommandHandler(event); }]
+  ,["aup-command-quickAddFilter","command",quickAddFilter]
 
   // TODO: ?
   //["aup-toolbarbutton", "click", function(event) { if (event.eventPhase == event.AT_TARGET && event.button == 1) aupTogglePref("enabled"); }],
@@ -791,4 +792,22 @@ function switchDefaultProxy(event)
         prefs.save();
     }
 
+}
+
+function quickAddFilter()
+{
+    var prompts = Components.classes["@mozilla.org/embedcomp/prompt-service;1"].getService(Components.interfaces.nsIPromptService);
+    if (getCurrentLocation())
+    {
+        var url = getCurrentLocation().spec;
+        if (!url || url == "" || url == "about:blank")return;
+        var input = {value: getCurrentLocation().spec};
+        var result = prompts.prompt(null, "Quick add filter", "", input, null, {value:false});
+        if (result)
+        {
+            var filter = aup.Filter.fromText(input.value);
+            filterStorage.addFilter(filter);
+            filterStorage.saveToDisk();
+        }
+    }
 }
