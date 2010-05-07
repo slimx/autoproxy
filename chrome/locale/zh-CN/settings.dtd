@@ -96,3 +96,12 @@
 <!ENTITY proxy.column                  "代理">
 <!ENTITY slow.column                     "Slow filters">
 <!ENTITY slow.accesskey                  "w">
+
+<!ENTITY changeStatusClickBehaviour.label "单击状态栏图标行为">
+<!ENTITY changeToolbarClickBehaviour.label "单击工具栏图标行为">
+<!ENTITY changeClickBehaviour_context "快捷菜单">
+<!ENTITY changeClickBehaviour_proxyMenu "代理菜单">
+<!ENTITY changeClickBehaviour_cycleProxy "代理循环">
+<!ENTITY changeClickBehaviour_quickAdd "快速添加规则">
+<!ENTITY changeClickBehaviour_preference "首选项">
+<!ENTITY changeClickBehaviour_proxyable "可代理资源列表">
