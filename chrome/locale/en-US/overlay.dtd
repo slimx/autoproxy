@@ -50,3 +50,4 @@
 <!ENTITY objecttab.tooltip      "Click here to proxy this object with AutoProxy">
 <!ENTITY switchProxy.label      "Switch default proxy">
 <!ENTITY showCurrentProxy.label "Change default proxy to:">
+<!ENTITY quickAddFilter.label "Quick add filter">

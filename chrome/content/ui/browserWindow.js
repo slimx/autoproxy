@@ -44,7 +44,8 @@ let eventHandlers = [
   ["aup-command-modedisabled", "command", function() { switchToMode('disabled'); }],
   ["aup-status", "click", aupClickHandler],
   ["aup-toolbarbutton", "click", function(event) { if (event.button==1) aupClickHandler(event) }],
-  ["aup-toolbarbutton", "command", function(event) { if (event.eventPhase == event.AT_TARGET) aupCommandHandler(event); }]
+  ["aup-toolbarbutton", "command", function(event) { if (event.eventPhase == event.AT_TARGET) aupCommandHandler(event); }],
+  ["aup-command-quickAddFilter","command",quickAddFilter]
 ];
 
 /**
@@ -743,3 +744,11 @@ function switchDefaultProxy(event)
     prefs.save();
   }
 }
+
+    function quickAddFilter()
+    {
+        var rootData = aup.getDataForWindow(window);
+//        var item = rootData.getLocation(6, window.getBrowser().contentWindow.document.currentURI.spec);
+        var item = rootData.getLocation(6, aup.getBrowserInWindow(window).currentURI.spec);
+        window.openDialog("chrome://autoproxy/content/ui/composer.xul", "_blank", "chrome,centerscreen,resizable,dialog=no,dependent", window.content, item);
+    }
