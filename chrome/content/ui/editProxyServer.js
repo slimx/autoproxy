@@ -95,7 +95,6 @@ function addNewRow()
   createBlankRow();
   gE("warning").hidden = gE("note").hidden = gE("tip").hidden = true;
   window.sizeToContent();
-  window.centerWindowOnScreen();
 }
 
 /**
@@ -147,8 +146,6 @@ function delSelectedRow()
   if ( !gE("warning").hidden ) hide("note");
   if ( gE("warning").hidden && gE("note").hidden ) hide("tip");
   else show("tip");
-
-  window.centerWindowOnScreen();
 }
 
 function reset2Default()
@@ -166,7 +163,6 @@ function reset2Default()
   proxies = aup.proxy.configToObj(prefs.knownProxy);
   init();
   window.sizeToContent();
-  window.centerWindowOnScreen();
 
   defaultProxy = 0;
 }
