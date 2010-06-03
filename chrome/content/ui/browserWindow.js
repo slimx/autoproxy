@@ -410,7 +410,7 @@ function aupFillTooltip(event) {
     action = -1;
 
   var actionDescr = E("aup-tooltip-action");
-  actionDescr.hidden = (action < 0 || action > 3);
+  actionDescr.hidden = (action < 0 || action > 5);
   if (!actionDescr.hidden)
     actionDescr.setAttribute("value", aup.getString("action" + action + "_tooltip"));
 
@@ -686,6 +686,7 @@ function aupExecuteAction(action, e)
       aup.openSettingsDialog();
       break;
     case 3: //quick add
+       quickAddFilter();
       break;
     case 4: //cycle default proxy
       if (aup.proxyTipTimer) aup.proxyTipTimer.cancel();
@@ -748,7 +749,6 @@ function switchDefaultProxy(event)
     function quickAddFilter()
     {
         var rootData = aup.getDataForWindow(window);
-//        var item = rootData.getLocation(6, window.getBrowser().contentWindow.document.currentURI.spec);
         var item = rootData.getLocation(6, aup.getBrowserInWindow(window).currentURI.spec);
         window.openDialog("chrome://autoproxy/content/ui/composer.xul", "_blank", "chrome,centerscreen,resizable,dialog=no,dependent", window.content, item);
     }
