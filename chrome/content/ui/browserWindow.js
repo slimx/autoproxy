@@ -86,7 +86,7 @@ function aupInit() {
   filterStorage.addSubscriptionObserver(aupReloadPrefs);
 
   let browser = aup.getBrowserInWindow(window);
-  browser.addEventListener("click", handleLinkClick, true);
+  //browser.addEventListener("click", handleLinkClick, true);
 
   let dummy = function() {};
   let progressListener = {

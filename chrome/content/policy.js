@@ -239,7 +239,7 @@ var policy =
         }
       }
     }
-    catch (e if (e != Cr.NS_BASE_STREAM_WOULD_BLOCK))
+    catch (e)
     {
       // We shouldn't throw exceptions here - this will prevent the redirect.
       dump("\nAutoProxy: Unexpected error in policy.onChannelRedirect: " + e + "\n");
