@@ -44,10 +44,9 @@ function E(id)
 }
 
 /**
- * Switch to specified proxy mode.
+ * Shortcut for document.createElementNS(element)
  */
-function switchToMode(mode)
+function cE(elmt)
 {
-  prefs.proxyMode = mode;
-  prefs.save();
+  return document.createElementNS("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul", elmt);
 }

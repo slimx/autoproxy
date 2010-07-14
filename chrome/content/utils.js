@@ -15,7 +15,7 @@
  *
  * The Initial Developer of the Original Code is
  * Wladimir Palant.
- * Portions created by the Initial Developer are Copyright (C) 2006-2008
+ * Portions created by the Initial Developer are Copyright (C) 2006-2009
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -26,6 +26,8 @@
  * Utility functions and classes.
  * This file is included from AutoProxy.js.
  */
+
+var threadManager = Cc["@mozilla.org/thread-manager;1"].getService(Ci.nsIThreadManager);
 
 // String service
 var stringService = Cc["@mozilla.org/intl/stringbundle;1"].getService(Ci.nsIStringBundleService);
@@ -83,13 +85,23 @@ function makeURL(url) {
 }
 aup.makeURL = makeURL;
 
-// Sets a timeout, comparable to the usual setTimeout function
-function createTimer(callback, delay) {
-  var timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
-  timer.init({observe: callback}, delay, timer.TYPE_ONE_SHOT);
-  return timer;
+/**
+ * Posts an action to the event queue of the current thread to run it
+ * asynchronously. Any additional parameters to this function are passed
+ * as parameters to the callback.
+ */
+function runAsync(/**Function*/ callback, /**Object*/ thisPtr)
+{
+  let params = Array.prototype.slice.call(arguments, 2);
+  let runnable = {
+    run: function()
+    {
+      callback.apply(thisPtr, params);
+    }
+  };
+  threadManager.currentThread.dispatch(runnable, Ci.nsIEventTarget.DISPATCH_NORMAL);
 }
-aup.createTimer = createTimer;
+aup.runAsync = runAsync;
 
 /**
  * Gets the DOM window associated with a particular request (if any).
@@ -195,3 +207,20 @@ function generateChecksum(lines)
   }
 }
 aup.generateChecksum = generateChecksum;
+
+let _wrapNodeArray = null;
+
+/**
+ * Forces XPCNativeWrapper on a DOM element. This is used only in tests.
+ */
+function wrapNode(node)
+{
+  if (!_wrapNodeArray)
+    _wrapNodeArray = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
+
+  _wrapNodeArray.appendElement(node, false);
+  let result = _wrapNodeArray.queryElementAt(0, Ci.nsISupports);
+  _wrapNodeArray.removeElementAt(0);
+  return result;
+}
+aup.wrapNode = wrapNode;

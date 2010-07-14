@@ -23,7 +23,10 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+
 var aupHideImageManager;
+var RequestList = aup.RequestList;
 
 /**
  * List of event handers to be registered. For each event handler the element ID,
@@ -39,13 +42,12 @@ let eventHandlers = [
   ["aup-command-togglesitewhitelist", "command", function() { toggleFilter(siteWhitelist); }],
   ["aup-command-toggleshowintoolbar", "command", function() { aupTogglePref("showintoolbar"); }],
   ["aup-command-toggleshowinstatusbar", "command", function() { aupTogglePref("showinstatusbar"); }],
-  ["aup-command-modeauto", "command", function() { switchToMode('auto'); }],
-  ["aup-command-modeglobal", "command", function() { switchToMode('global'); }],
-  ["aup-command-modedisabled", "command", function() { switchToMode('disabled'); }],
+  ["aup-command-modeauto", "command", function() { proxy.switchToMode('auto'); }],
+  ["aup-command-modeglobal", "command", function() { proxy.switchToMode('global'); }],
+  ["aup-command-modedisabled", "command", function() { proxy.switchToMode('disabled'); }],
   ["aup-status", "click", aupClickHandler],
-  ["aup-toolbarbutton", "click", function(event) { if (event.button==1) aupClickHandler(event) }],
   ["aup-toolbarbutton", "command", function(event) { if (event.eventPhase == event.AT_TARGET) aupCommandHandler(event); }],
-  ["aup-command-quickAddFilter","command",quickAddFilter]
+  ["aup-toolbarbutton", "click", function(event) { if (event.button==1) aupClickHandler(event) }]
 ];
 
 /**
@@ -65,12 +67,70 @@ let siteWhitelist = null;
  */
 let progressListener = null;
 
+/**
+ * Object implementing app-specific methods.
+ */
+let aupHooks = E("aup-hooks");
+
 aupInit();
 
 function aupInit() {
+  // Initialize app hooks
+  for each (let hook in ["getBrowser", "addTab", "onInit"])
+  {
+    let handler = aupHooks.getAttribute(hook);
+    if (handler)
+      aupHooks[hook] = new Function(handler);
+  }
+  aupHooks.hasToolbar = (aupHooks.getAttribute("hasToolbar") == "true");
+
   // Process preferences
   window.aupDetachedSidebar = null;
   aupReloadPrefs();
+
+  // Copy the menu from status bar icon to the toolbar
+  function fixId(node)
+  {
+    if (node.nodeType != node.ELEMENT_NODE)
+      return node;
+
+    if ("id" in node && node.id)
+      node.id = node.id.replace(/aup-status/, "aup-toolbar");
+
+    for (var child = node.firstChild; child; child = child.nextSibling)
+      fixId(child);
+
+    return node;
+  }
+  function copyMenu(to)
+  {
+    if (!to || !to.firstChild)
+      return;
+
+    to = to.firstChild;
+    var from = E("aup-status-popup");
+    for (var node = from.firstChild; node; node = node.nextSibling)
+      to.appendChild(fixId(node.cloneNode(true)));
+  }
+  let paletteButton = aupGetPaletteButton();
+  copyMenu(E("aup-toolbarbutton"));
+  copyMenu(paletteButton);
+
+  // Palette button elements aren't reachable by ID, create a lookup table
+  let paletteButtonIDs = {};
+  if (paletteButton)
+  {
+    function getElementIds(element)
+    {
+      if (element.hasAttribute("id"))
+        paletteButtonIDs[element.getAttribute("id")] = element;
+
+      for (let child = element.firstChild; child; child = child.nextSibling)
+        if (child.nodeType == Ci.nsIDOMNode.ELEMENT_NODE)
+          getElementIds(child);
+    }
+    getElementIds(paletteButton);
+  }
 
   // Register event listeners
   window.addEventListener("unload", aupUnload, false);
@@ -79,14 +139,17 @@ function aupInit() {
     let element = E(id);
     if (element)
       element.addEventListener(event, handler, false);
+
+    if (id in paletteButtonIDs)
+      paletteButtonIDs[id].addEventListener(event, handler, false);
   }
 
   prefs.addListener(aupReloadPrefs);
   filterStorage.addFilterObserver(aupReloadPrefs);
   filterStorage.addSubscriptionObserver(aupReloadPrefs);
 
-  let browser = aup.getBrowserInWindow(window);
-  //browser.addEventListener("click", handleLinkClick, true);
+  let browser = aupHooks.getBrowser();
+  browser.addEventListener("click", handleLinkClick, true);
 
   let dummy = function() {};
   let progressListener = {
@@ -94,7 +157,8 @@ function aupInit() {
     onProgressChange: dummy,
     onSecurityChange: dummy,
     onStateChange: dummy,
-    onStatusChange: dummy
+    onStatusChange: dummy,
+    QueryInterface: XPCOMUtils.generateQI([Ci.nsIWebProgressListener, Ci.nsISupportsWeakReference])
   };
   browser.addProgressListener(progressListener);
 
@@ -112,54 +176,27 @@ function aupInit() {
     // Don't repeat first run actions if new window is opened
     prefs.doneFirstRunActions = true;
 
-    // Add aup icon to toolbar if necessary
-    aup.createTimer(aupInstallInToolbar, 0);
+    // Add AUP icon to toolbar if necessary
+    aup.runAsync(aupInstallInToolbar);
 
     // Show subscriptions dialog if the user doesn't have any subscriptions yet
-    aup.createTimer(aupShowSubscriptions, 0);
+    aup.runAsync(aupShowSubscriptions);
   }
 
-  // Move toolbar button to a correct location in Mozilla/SeaMonkey
-  var button = E("aup-toolbarbutton");
-  if (button && button.parentNode.id == "nav-bar-buttons") {
-    var ptf = E("bookmarks-ptf");
-    ptf.parentNode.insertBefore(button, ptf);
-  }
+  // Run application-specific initialization
+  if (aupHooks.onInit)
+    aupHooks.onInit();
 
-  // Copy the menu from status bar icon to the toolbar
-  var fixId = function(node) {
-    if (node.nodeType != node.ELEMENT_NODE)
-      return node;
-
-    if ("id" in node && node.id)
-      node.id = node.id.replace(/aup-status/, "aup-toolbar");
-
-    for (var child = node.firstChild; child; child = child.nextSibling)
-      fixId(child);
-
-    return node;
-  };
-  var copyMenu = function(to) {
-    if (!to || !to.firstChild)
-      return;
-
-    to = to.firstChild;
-    var from = E("aup-status-popup");
-    for (var node = from.firstChild; node; node = node.nextSibling)
-      to.appendChild(fixId(node.cloneNode(true)));
-  };
-  copyMenu(E("aup-toolbarbutton"));
-  copyMenu(aupGetPaletteButton());
-
-  aup.createTimer(aupInitImageManagerHiding, 0);
+  aup.runAsync(aupInitImageManagerHiding);
 }
 
 function aupUnload()
 {
   prefs.removeListener(aupReloadPrefs);
+  prefs.removeListener(proxy.reloadPrefs);
   filterStorage.removeFilterObserver(aupReloadPrefs);
   filterStorage.removeSubscriptionObserver(aupReloadPrefs);
-  aup.getBrowserInWindow(window).removeProgressListener(progressListener);
+  aupHooks.getBrowser().removeProgressListener(progressListener);
 }
 
 function aupReloadPrefs() {
@@ -183,8 +220,8 @@ function aupReloadPrefs() {
     else
       element.hidden = !prefs.showintoolbar;
 
-    // HACKHACK: Show status bar icon in SeaMonkey Mail and Prism instead of toolbar icon
-    if (element.hidden && (element.tagName == "statusbarpanel" || element.tagName == "vbox") && (E("msgToolbar") || window.location.host == "webrunner"))
+    // HACKHACK: Show status bar icon instead of toolbar icon if the application doesn't have a toolbar icon
+    if (element.hidden && element.tagName == "statusbarpanel" && !aupHooks.hasToolbar)
       element.hidden = !prefs.showintoolbar;
 
     if (currentlyShowingInToolbar != prefs.showintoolbar)
@@ -215,8 +252,6 @@ function aupReloadPrefs() {
   }
 
   updateElement(aupGetPaletteButton());
-
-  proxy.reloadPrefs();
 }
 
 function aupInitImageManagerHiding() {
@@ -417,16 +452,18 @@ function aupFillTooltip(event) {
   var state = event.target.getAttribute("curstate");
   var statusDescr = E("aup-tooltip-status");
   statusDescr.setAttribute("value", aup.getString(state + "_tooltip"));
+  var proxyDescr = E("aup-tooltip-proxy");
+  proxyDescr.setAttribute("value", proxy.nameOfDefaultProxy);
 
   var activeFilters = [];
   E("aup-tooltip-blocked-label").hidden = (state != "auto");
   E("aup-tooltip-blocked").hidden = (state != "auto");
   if (state == "auto") {
     var locations = [];
-    var rootData = aup.getDataForWindow(window);
-    var rootCurrentData = rootData.getLocation(6, aup.getBrowserInWindow(window).currentURI.spec);
+    var rootData = RequestList.getDataForWindow(window);
+    var rootCurrentData = rootData.getLocation(6, aupHooks.getBrowser().currentURI.spec);
     if (rootCurrentData) locations.push(rootCurrentData);
-    var data = aup.getDataForWindow( aup.getBrowserInWindow(window).contentWindow );
+    var data = RequestList.getDataForWindow(aupHooks.getBrowser().contentWindow);
     data.getAllLocations(locations);
 
     var blocked = 0;
@@ -502,7 +539,7 @@ function getCurrentLocation() /**nsIURI*/
   else
   {
     // Regular browser
-    return aup.unwrapURL(aup.getBrowserInWindow(window).contentWindow.location.href);
+    return aup.unwrapURL(aupHooks.getBrowser().contentWindow.location.href);
   }
 }
 
@@ -535,12 +572,12 @@ function aupFillPopup(event) {
   let location = getCurrentLocation();
   if (location && proxy.isProxyableScheme(location))
   {
-    let host = location.host.replace(/^www\./, "");
+    host = location.host.replace(/^www\./, "");
 
     if (host)
     {
       siteWhitelist = aup.Filter.fromText("@@||" + host + "^$document");
-      whitelistItemSite.setAttribute("checked", !siteWhitelist.disabled && isUserDefinedFilter(siteWhitelist));
+      whitelistItemSite.setAttribute("checked", siteWhitelist.subscriptions.length && !siteWhitelist.disabled);
       whitelistItemSite.setAttribute("label", whitelistItemSite.getAttribute("labeltempl").replace(/--/, host));
       whitelistItemSite.hidden = false;
     }
@@ -581,7 +618,7 @@ function aupFillPopup(event) {
     if (proxy.nameOfDefaultProxy == p) item.setAttribute('checked', true);
     popup.appendChild(item);
   }
-  popup.insertBefore(document.createElement("menuseparator"),popup.firstChild.nextSibling);
+  popup.insertBefore(document.createElement("menuseparator"), popup.firstChild.nextSibling);
 }
 
 // Only show context menu on toolbar button in vertical toolbars
@@ -615,6 +652,8 @@ function aupToggleSidebar() {
       E("aup-sidebar-splitter").hidden = !sidebar.hidden;
       E("aup-sidebar-browser").setAttribute("src", sidebar.hidden ? "chrome://autoproxy/content/ui/sidebar.xul" : "about:blank");
       sidebar.hidden = !sidebar.hidden;
+      if (sidebar.hidden)
+        aupHooks.getBrowser().contentWindow.focus();
     }
     else
       window.aupDetachedSidebar = window.openDialog("chrome://autoproxy/content/ui/sidebarDetached.xul", "_blank", "chrome,resizable,dependent,dialog=no,width=600,height=300");
@@ -623,16 +662,6 @@ function aupToggleSidebar() {
   let menuItem = E("aup-blockableitems");
   if (menuItem)
     menuItem.setAttribute("checked", aupIsSidebarOpen());
-}
-
-/**
- * Checks whether the specified filter exists as a user-defined filter in the list.
- *
- * @param {String} filter   text representation of the filter
- */
-function isUserDefinedFilter(/**Filter*/ filter)  /**Boolean*/
-{
-  return filter.subscriptions.some(function(subscription) { return subscription instanceof aup.SpecialSubscription; });
 }
 
 // Toggles the value of a boolean pref
@@ -646,14 +675,15 @@ function aupTogglePref(pref) {
  */
 function toggleFilter(/**Filter*/ filter)
 {
-  if (isUserDefinedFilter(filter))
+  if (filter.subscriptions.length)
   {
-      if (filter.disabled) {
-          filter.disabled = false;
-          filterStorage.triggerFilterObservers("enable", [filter]);
-      }
-      else
-          filterStorage.removeFilter(filter);
+    if (filter.disabled || filter.subscriptions.some(function(subscription) !(subscription instanceof aup.SpecialSubscription)))
+    {
+      filter.disabled = !filter.disabled;
+      filterStorage.triggerFilterObservers(filter.disabled ? "disable" : "enable", [filter]);
+    }
+    else
+      filterStorage.removeFilter(filter);
   }
   else
     filterStorage.addFilter(filter);
@@ -661,18 +691,16 @@ function toggleFilter(/**Filter*/ filter)
 }
 
 // Handle clicks on the statusbar panel
-function aupClickHandler(e)
-{
+function aupClickHandler(e) {
   if (e.button == 0)
-    aupExecuteAction(prefs.defaultstatusbaraction,e);
+    aupExecuteAction(prefs.defaultstatusbaraction, e);
   else if (e.button == 1) {
     prefs.proxyMode = proxy.mode[ (proxy.mode.indexOf(prefs.proxyMode)+1) % 3 ];
     prefs.save();
   }
 }
 
-function aupCommandHandler(e)
-{
+function aupCommandHandler(e) {
   if (prefs.defaulttoolbaraction == 0)
     e.target.open = true;
   else
@@ -693,11 +721,10 @@ function aupExecuteAction(action, e)
       aup.openSettingsDialog();
       break;
     case 3: //quick add
-       quickAddFilter();
       break;
     case 4: //cycle default proxy
       if (aup.proxyTipTimer) aup.proxyTipTimer.cancel();
-      prefs.defaultProxy = (prefs.defaultProxy + 1) % proxy.server.length;
+      prefs.defaultProxy = ++prefs.defaultProxy % proxy.server.length;
       prefs.save();
       //show tooltip
       let tooltip = E("showCurrentProxy");
@@ -723,7 +750,7 @@ function aupExecuteAction(action, e)
         if (proxy.nameOfDefaultProxy == p) item.setAttribute('checked', true);
         popup.appendChild(item);
       }
-      popup.insertBefore(document.createElement("menuseparator"),popup.firstChild.nextSibling);
+      popup.insertBefore(document.createElement("menuseparator"), popup.firstChild.nextSibling);
       if(e.screenX&&e.screenY) popup.openPopupAtScreen(e.screenX, e.screenY, false);
       else popup.openPopupAtScreen(e.target.boxObject.screenX, e.target.boxObject.screenY, false);
       break;
@@ -733,8 +760,7 @@ function aupExecuteAction(action, e)
 }
 
 // Retrieves the image URL for the specified style property
-function aupImageStyle(computedStyle, property)
-{
+function aupImageStyle(computedStyle, property) {
   var value = computedStyle.getPropertyCSSValue(property);
   if (value instanceof Ci.nsIDOMCSSValueList && value.length >= 1)
     value = value[0];
@@ -752,10 +778,3 @@ function switchDefaultProxy(event)
     prefs.save();
   }
 }
-
-    function quickAddFilter()
-    {
-        var rootData = aup.getDataForWindow(window);
-        var item = rootData.getLocation(6, aup.getBrowserInWindow(window).currentURI.spec);
-        window.openDialog("chrome://autoproxy/content/ui/composer.xul", "_blank", "chrome,centerscreen,resizable,dialog=no,dependent", window.content, item);
-    }

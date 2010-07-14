@@ -18,10 +18,28 @@
     {
       background-color: #ffffe0;
     }
+
+    button
+    {
+      float: right;
+    }
   </style>
 </head>
 <body>
+  <button onclick="window.location.reload();">Refresh</button>
+  <button onclick="clearErrors();">Clear errors</button>
+
   <script type="application/x-javascript;version=1.7">
+    try {
+      let aup = Components.classes["@mozilla.org/autoproxy;1"].createInstance().wrappedJSObject;
+      let text = "You are running AutoProxy " + aup.getInstalledVersion();
+      let build = aup.getInstalledBuild();
+      if (build)
+        text += ", build " + build;
+      text += ".";
+      document.write("<p>" + text + "</p>");
+    } catch (e) {}
+
     let messages = {};
     Components.classes["@mozilla.org/consoleservice;1"]
               .getService(Components.interfaces.nsIConsoleService)
@@ -36,7 +54,7 @@
 
     if (messages.length)
     {
-      document.write("Errors related to AutoProxy:");
+      document.write("<p>Errors related to AutoProxy:</p>");
 
       for each (let message in messages)
       {
@@ -55,12 +73,20 @@
     }
     else
     {
-      document.write("No errors found.");
+      document.write("<p>No errors found.</p>");
     }
 
     function encodeHTML(string)
     {
       return string.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function clearErrors()
+    {
+      Components.classes["@mozilla.org/consoleservice;1"]
+                .getService(Components.interfaces.nsIConsoleService)
+                .reset();
+      window.location.reload();
     }
   </script>
 </body>

@@ -23,22 +23,15 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-var aup = Components.classes["@mozilla.org/autoproxy;1"]
-                          .createInstance().wrappedJSObject;
-var prefs = aup.prefs;
-var proxies = aup.proxy.validConfigs;
+var proxies = proxy.validConfigs;
 var defaultProxy = prefs.defaultProxy;
 
 let rows;
-let gE = function(a) { return document.getElementById(a); };
-let cE = function(b) { return document.createElementNS(
-		 "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul", b); };
 
 function init()
 {
   rows = document.getElementsByTagName("rows")[0];
-  for (var i=0; i<proxies.length; i++)
-      createBlankRow(proxies[i]);
+  for (var i=0; i<proxies.length; i++) createBlankRow(proxies[i]);
 }
 
 function createBlankRow(proxy)
@@ -66,12 +59,11 @@ function createBlankRow(proxy)
   socks4.setAttribute("class", "proxySocks4");
   socks.setAttribute("class", "proxySocks5");
 
-  if(proxy)
-  {
-      proxyName.setAttribute("value",proxy.name);
-      proxyHost.setAttribute("value",proxy.host);
-      proxyPort.setAttribute("value",proxy.port);
-      eval(proxy.type+".setAttribute('selected',true)");
+  if (proxy) {
+    proxyName.setAttribute("value", proxy.name);
+    proxyHost.setAttribute("value", proxy.host);
+    proxyPort.setAttribute("value", proxy.port);
+    eval( proxy.type + ".setAttribute('selected', true)" );
   }
 
   // insert type nodes to type
@@ -93,7 +85,7 @@ function createBlankRow(proxy)
 function addNewRow()
 {
   createBlankRow();
-  gE("warning").hidden = gE("note").hidden = gE("tip").hidden = true;
+  E("warning").hidden = E("note").hidden = E("tip").hidden = true;
   window.sizeToContent();
 }
 
@@ -104,16 +96,16 @@ function addNewRow()
  */
 function show(id)
 {
-  if ( gE(id).hidden ) {
-    gE(id).hidden = false;
+  if ( E(id).hidden ) {
+    E(id).hidden = false;
     window.sizeToContent();
   }
 }
 
 function hide(id)
 {
-  if ( !gE(id).hidden ) {
-    gE(id).hidden = true;
+  if ( !E(id).hidden ) {
+    E(id).hidden = true;
     window.sizeToContent();
   }
 }
@@ -134,23 +126,23 @@ function delSelectedRow()
 
   // check whether default proxy has been removed.
   // it may be modified before delete, so do a new loop.
-  if(defaultProxy!=0){
-  show("note");
-  for (row=rows.firstChild.nextSibling; row; row=row.nextSibling) {
-    if (row.firstChild.value==aup.proxy.nameOfDefaultProxy) {
-      hide("note"); break;
+  if (defaultProxy != 0 ) {
+    show("note");
+    for (row=rows.firstChild.nextSibling; row; row=row.nextSibling) {
+      if (row.firstChild.value == aup.proxy.nameOfDefaultProxy) {
+        hide("note"); break;
+      }
     }
   }
-  }
 
-  if ( !gE("warning").hidden ) hide("note");
-  if ( gE("warning").hidden && gE("note").hidden ) hide("tip");
+  if ( !E("warning").hidden ) hide("note");
+  if ( E("warning").hidden && E("note").hidden ) hide("tip");
   else show("tip");
 }
 
 function reset2Default()
 {
-  gE("warning").hidden = gE("note").hidden = gE("tip").hidden = true;
+  E("warning").hidden = E("note").hidden = E("tip").hidden = true;
 
   let row = rows.firstChild.nextSibling;
   while (row) {
@@ -160,7 +152,7 @@ function reset2Default()
     window.sizeToContent();
   }
 
-  proxies = aup.proxy.configToObj(prefs.knownProxy);
+  proxies = proxy.configToObj(prefs.knownProxy);
   init();
   window.sizeToContent();
 

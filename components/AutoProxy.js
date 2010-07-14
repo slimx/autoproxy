@@ -35,7 +35,6 @@ const Cu = Components.utils;
 const Node = Ci.nsIDOMNode;
 const Element = Ci.nsIDOMElement;
 const Window = Ci.nsIDOMWindow;
-const ImageLoadingContent = Ci.nsIImageLoadingContent;
 
 const loader = Cc["@mozilla.org/moz/jssubscript-loader;1"].getService(Ci.mozIJSSubScriptLoader);
 const ioService = Cc["@mozilla.org/network/io-service;1"].getService(Ci.nsIIOService);
@@ -280,6 +279,14 @@ const aup =
     return "{{VERSION}}";
   },
 
+  /**
+   * Returns source code revision this AutoProxy build was created from (if available)
+   */
+  getInstalledBuild: function() /**String*/
+  {
+    return "{{BUILD}}";
+  },
+
   //
   // Custom methods
   //
@@ -301,7 +308,7 @@ const aup =
    */
   init: function()
   {
-    timeLine.log("aup.init() called");
+    timeLine.enter("Entered aup.init()");
 
     if (this.initialized)
       return;
@@ -315,15 +322,18 @@ const aup =
     loader.loadSubScript('chrome://autoproxy/content/filterListener.js');
     loader.loadSubScript('chrome://autoproxy/content/proxy.js');
     loader.loadSubScript('chrome://autoproxy/content/policy.js');
-    loader.loadSubScript('chrome://autoproxy/content/data.js');
+    loader.loadSubScript('chrome://autoproxy/content/requests.js');
     loader.loadSubScript('chrome://autoproxy/content/prefs.js');
     loader.loadSubScript('chrome://autoproxy/content/synchronizer.js');
 
     timeLine.log("calling prefs.init()");
     prefs.init();
 
-    timeLine.log("calling filterStore.loadFromDisk()");
-    filterStorage.loadFromDisk();
+    timeLine.log("calling proxy.init()");
+    proxy.init();
+
+    timeLine.log("calling filterStorage.init()");
+    filterStorage.init();
 
     timeLine.log("calling proxy.init()");
     proxy.init();
@@ -331,7 +341,7 @@ const aup =
     timeLine.log("calling policy.init()");
     policy.init();
 
-    timeLine.log("aup.init() done");
+    timeLine.leave("aup.init() done");
   },
 
   /**
@@ -424,58 +434,16 @@ const aup =
                     windowMediator.getMostRecentWindow("navigator:browser") ||
                     windowMediator.getMostRecentWindow("Songbird:Main") ||
                     windowMediator.getMostRecentWindow("emusic:window");
-    function tryWindowMethod(method, parameters)
+    let aupHooks = currentWindow ? currentWindow.document.getElementById("aup-hooks") : null;
+    if (aupHooks && aupHooks.addTab)
     {
-      let obj = currentWindow;
-      if (currentWindow && /^browser\.(.*)/.test(method))
-      {
-        method = RegExp.$1;
-        obj = aup.getBrowserInWindow(currentWindow);
-      }
-
-      if (!obj)
-        return false;
-
-      try
-      {
-        obj[method].apply(obj, parameters);
-      }
-      catch(e)
-      {
-        return false;
-      }
-
-      try
-      {
-        currentWindow.focus();
-      } catch(e) {}
-      return true;
+      aupHooks.addTab(url);
     }
-
-    if (tryWindowMethod("delayedOpenTab", [url]))
-      return;
-    if (tryWindowMethod("browser.addTab", [url, null, null, true]))
-      return;
-    if (tryWindowMethod("openUILinkIn", [url, "tab"]))
-      return;
-    if (tryWindowMethod("loadURI", [url]))
-      return;
-
-    var protocolService = Cc["@mozilla.org/uriloader/external-protocol-service;1"].getService(Ci.nsIExternalProtocolService);
-    protocolService.loadURI(makeURL(url), null);
-  },
-
-  /**
-   * Retrieves the browser/tabbrowser element for the specified window (might return null).
-   */
-  getBrowserInWindow: function(/**Window*/ window)  /**Element*/
-  {
-    if ("getBrowser" in window)
-      return window.getBrowser();
-    else if ("messageContent" in window)
-      return window.messageContent;
     else
-      return window.document.getElementById("frame_main_pane") || window.document.getElementById("browser_content");
+    {
+      let protocolService = Cc["@mozilla.org/uriloader/external-protocol-service;1"].getService(Ci.nsIExternalProtocolService);
+      protocolService.loadURI(makeURL(url), null);
+    }
   },
 
   params: null,
@@ -518,20 +486,50 @@ var NSGetModule = XPCOMUtils.generateNSGetModule([Initializer, AUPComponent]);
  * @class
  */
 var timeLine = {
+  _nestingCounter: 0,
   _lastTimeStamp: null,
 
   /**
    * Logs an event to console together with the time it took to get there.
    */
-  log: function(/**String*/ msg)
+  log: function(/**String*/ message, /**Boolean*/ _forceDisplay)
   {
+    if (!_forceDisplay && this._invocationCounter <= 0)
+      return;
+
     let now = (new Date()).getTime();
     let diff = this._lastTimeStamp ? (now - this._lastTimeStamp) : "first event";
     this._lastTimeStamp = now;
-    
+
+    // Indent message depending on current nesting level
+    for (let i = 0; i < this._nestingCounter; i++)
+      message = "* " + message;
+
+    // Pad message with spaces
     let padding = [];
-    for (var i = msg.toString().length; i < 40; i++)
+    for (let i = message.toString().length; i < 40; i++)
       padding.push(" ");
-    dump("aup timeline: " + msg + padding.join("") + "\t (" + diff + ")\n");
+    dump("ABP timeline: " + message + padding.join("") + "\t (" + diff + ")\n");
+  },
+
+  /**
+   * Called to indicate that application entered a block that needs to be timed.
+   */
+  enter: function(/**String*/ message)
+  {
+    this.log(message, true);
+    this._nestingCounter = (this._nestingCounter <= 0 ? 1 : this._nestingCounter + 1);
+  },
+
+  /**
+   * Called when applicaiton exited a block that timeLine.enter() was called for.
+   */
+  leave: function(/**String*/ message)
+  {
+    this._nestingCounter--;
+    this.log(message, true);
+
+    if (this._nestingCounter <= 0)
+      this._lastTimeStamp = null;
   }
 };

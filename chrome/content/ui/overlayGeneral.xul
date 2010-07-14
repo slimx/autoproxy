@@ -17,7 +17,7 @@
    -
    - The Initial Developer of the Original Code is
    - Wladimir Palant.
-   - Portions created by the Initial Developer are Copyright (C) 2006-2008
+   - Portions created by the Initial Developer are Copyright (C) 2006-2009
    - the Initial Developer. All Rights Reserved.
    -
    - Contributor(s):
@@ -34,14 +34,15 @@
 ]>
 
 <overlay id="aup-overlay-general" xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
-  <script type="application/x-javascript;version=1.7" src="overlay.js"/>  
-  <script type="application/x-javascript;version=1.7" src="utils.js"/>
+  <script type="application/x-javascript;version=1.7" src="overlay.js"/>
 
   <popupset id="aup-popupset">
     <tooltip id="aup-tooltip" orient="vertical">
       <description id="aup-tooltip-action" hidden="true"/>
       <label id="aup-tooltip-status-label" value="&status.tooltip;"/>
       <description id="aup-tooltip-status"/>
+      <label id="aup-tooltip-proxy-label" value="&defaultProxy.tooltip;"/>
+      <description id="aup-tooltip-proxy"/>
       <label id="aup-tooltip-blocked-label" value="&blocked.tooltip;" hidden="true"/>
       <description id="aup-tooltip-blocked" hidden="true"/>
       <label id="aup-tooltip-filters-label" value="&filters.tooltip;" hidden="true"/>
@@ -52,7 +53,6 @@
       <menuitem id="aup-status-modeglobal" label="&mode.global.label;" accesskey="&mode.global.accesskey;" type="radio" command="aup-command-modeglobal"/>
       <menuitem id="aup-status-modedisabled" label="&mode.disabled.label;" accesskey="&mode.disabled.accesskey;" type="radio" command="aup-command-modedisabled"/>
       <menuseparator/>
-      <menuitem label="&quickAddFilter.label;" command="aup-command-quickAddFilter"/>
       <menu label="&switchProxy.label;" id="aup-status-switchProxy"/>
       <menuseparator/>
       <menuitem id="aup-status-opensidebar" label="&opensidebar.label;" accesskey="&opensidebar.accesskey;" key="aup-key-sidebar" command="aup-command-sidebar"/>
@@ -82,7 +82,6 @@
     <command id="aup-command-toggleshowintoolbar"/>
 
     <command id="aup-command-toggleshowinstatusbar"/>
-    <command id="aup-command-quickAddFilter"/>
   </commandset>
 
   <statusbarpanel id="aup-status" context="aup-status-popup">

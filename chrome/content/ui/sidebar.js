@@ -15,14 +15,14 @@
  *
  * The Initial Developer of the Original Code is
  * Wladimir Palant.
- * Portions created by the Initial Developer are Copyright (C) 2006-2008
+ * Portions created by the Initial Developer are Copyright (C) 2006-2009
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
  *
  * ***** END LICENSE BLOCK ***** */
 
-var DataContainer = aup.DataContainer;
+var RequestList = aup.RequestList;
 
 // Main browser window
 var mainWin = parent;
@@ -36,6 +36,8 @@ var noFlash = false;
 // Matchers for disabled filters
 var disabledBlacklistMatcher = new aup.Matcher();
 var disabledWhitelistMatcher = new aup.Matcher();
+
+var aupHooks = null;
 
 function init() {
   var list = E("list");
@@ -54,10 +56,12 @@ function init() {
       parent.document.getElementById("detached-keyset").appendChild(parent.document.importNode(sidebarKey, true));
     }
   }
-  window.__defineGetter__("content", function() {return aup.getBrowserInWindow(mainWin).contentWindow;});
+
+  aupHooks = mainWin.document.getElementById("aup-hooks");
+  window.__defineGetter__("content", function() {return aupHooks.getBrowser().contentWindow;});
 
   // Install item listener
-  DataContainer.addListener(handleItemChange);
+  RequestList.addListener(handleItemChange);
 
   // Initialize matchers for disabled filters
   reloadDisabledFilters();
@@ -79,10 +83,10 @@ function init() {
   list.addEventListener("select", onSelectionChange, false);
 
   // Retrieve data for the window
-  wndData = DataContainer.getDataForWindow(window.content);
+  wndData = RequestList.getDataForWindow(window.content);
   var locations=[];
-  var rootCurrentData = DataContainer.getDataForWindow(mainWin)
-          .getLocation(6, aup.getBrowserInWindow(mainWin).currentURI.spec);
+  var rootCurrentData = RequestList.getDataForWindow(mainWin)
+          .getLocation(6, aupHooks.getBrowser().currentURI.spec);
   if(rootCurrentData) locations.push(rootCurrentData);
   treeView.setData(wndData.getAllLocations(locations));
   if (wndData.lastSelection) {
@@ -92,7 +96,7 @@ function init() {
   }
 
   // Install a handler for tab changes
-  aup.getBrowserInWindow(mainWin).addEventListener("select", handleTabChange, false);
+  aupHooks.getBrowser().addEventListener("select", handleTabChange, false);
 }
 
 // To be called for a detached window when the main window has been closed
@@ -106,11 +110,11 @@ function cleanUp() {
     return;
 
   flasher.stop();
-  DataContainer.removeListener(handleItemChange);
+  RequestList.removeListener(handleItemChange);
   filterStorage.removeFilterObserver(reloadDisabledFilters);
   filterStorage.removeSubscriptionObserver(reloadDisabledFilters);
 
-  aup.getBrowserInWindow(mainWin).removeEventListener("select", handleTabChange, false);
+  aupHooks.getBrowser().removeEventListener("select", handleTabChange, false);
   mainWin.removeEventListener("unload", mainUnload, false);
 }
 
@@ -172,8 +176,8 @@ function handleItemChange(wnd, type, data, item) {
     // We moved to a different document, reload list
     wndData = data;
     var locations=[];
-    var rootCurrentData = DataContainer.getDataForWindow(mainWin)
-            .getLocation(6, aup.getBrowserInWindow(mainWin).currentURI.spec);
+    var rootCurrentData = RequestList.getDataForWindow(mainWin)
+            .getLocation(6, aupHooks.getBrowser().currentURI.spec);
     if(rootCurrentData) locations.push(rootCurrentData);
     treeView.setData(wndData.getAllLocations(locations));
   }
@@ -184,10 +188,10 @@ function handleItemChange(wnd, type, data, item) {
 }
 
 function handleTabChange() {
-  wndData = DataContainer.getDataForWindow(window.content);
+  wndData = RequestList.getDataForWindow(window.content);
   var locations=[];
-  var rootCurrentData = DataContainer.getDataForWindow(mainWin)
-          .getLocation(6, aup.getBrowserInWindow(mainWin).currentURI.spec);
+  var rootCurrentData = RequestList.getDataForWindow(mainWin)
+          .getLocation(6, aupHooks.getBrowser().currentURI.spec);
   if(rootCurrentData) locations.push(rootCurrentData);
   treeView.setData(wndData.getAllLocations(locations));
   if (wndData.lastSelection) {
@@ -302,9 +306,12 @@ const visual = {
   SUBDOCUMENT: true
 }
 
-// Fill in tooltip data before showing it
-function fillInContext(e) {
-  var item, allItems;
+/**
+ * Updates context menu before it is shown.
+ */
+function fillInContext(/**Event*/ e)
+{
+  let item, allItems;
   if (treeView.data && !treeView.data.length)
   {
     item = treeView.getDummyTooltip();
@@ -324,7 +331,7 @@ function fillInContext(e) {
   if ("filter" in item && item.filter)
   {
     let filter = item.filter;
-    let menuItem = E(item.filter.disabled ? "contextEnableFilter" : "contextDisableFilter");
+    let menuItem = E(filter.disabled ? "contextEnableFilter" : "contextDisableFilter");
     menuItem.filter = filter;
     menuItem.setAttribute("label", menuItem.getAttribute("labeltempl").replace(/--/, filter.text));
     menuItem.hidden = false;
@@ -522,7 +529,7 @@ function getItemSize(item)
   if (item.filter && !item.filter.disabled && item.filter instanceof aup.BlockingFilter)
     return null;
 
-  for each (let node in item.nodes)
+  for each (let node in item.nodesIterator)
   {
     if (node instanceof HTMLImageElement && (node.naturalWidth || node.naturalHeight))
       return [node.naturalWidth, node.naturalHeight];
@@ -612,7 +619,8 @@ var treeView = {
   //
 
   QueryInterface: function(uuid) {
-    if ( !uuid.equals(Ci.nsISupports) && !uuid.equals(Ci.nsITreeView))
+    if (!uuid.equals(Ci.nsISupports) &&
+        !uuid.equals(Ci.nsITreeView))
     {
       throw Cr.NS_ERROR_NO_INTERFACE;
     }

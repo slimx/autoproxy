@@ -17,10 +17,11 @@
    -
    - The Initial Developer of the Original Code is
    - Wladimir Palant.
-   - Portions created by the Initial Developer are Copyright (C) 2008
+   - Portions created by the Initial Developer are Copyright (C) 2006-2009
    - the Initial Developer. All Rights Reserved.
    -
    - Contributor(s):
+   - 2009-2010: Wang Congming <lovelywcm@gmail.com> Modified for AutoProxy.
    -
    - ***** END LICENSE BLOCK ***** -->
 
@@ -28,25 +29,38 @@
 
 <overlay id="aup-overlay" xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
   <!-- Window extensions -->
-  <window id="webrunner">
+  <window id="main-window">
     <popupset id="aup-popupset"/>
     <keyset id="aup-keyset"/>
     <commandset id="aup-commandset"/>
-    <box id="aup-hooks" getBrowser="return window.messageContent;"/>
+    <box id="aup-hooks" hasToolbar="true"
+      getBrowser="return window.gBrowser;"
+      addTab="window.gBrowser.addTab(arguments[0], null, null, true);"
+      onInit="let bookmarks = E('bookmarks-button');bookmarks.parentNode.insertBefore(E('aup-toolbarbutton'), bookmarks);"/>
   </window>
 
   <!-- Status bar -->
-  <statusbar id="statusbar">
-    <statusbarpanel id="aup-status" mousethrough="never" insertbefore="button_commands"/>
+  <statusbar id="status-bar">
+    <statusbarpanel id="aup-status" mousethrough="never" insertbefore="resizerBottomRight"/>
   </statusbar>
 
+  <!-- Toolbar -->
+  <toolbar id="PersonalToolbar">
+    <toolbarbutton id="aup-toolbarbutton" class="bookmark-item" hidden="true"/>
+  </toolbar>
+
   <!-- Tools menu -->
-  <menupopup id="popup_tools">
-    <menuitem id="aup-menuitem" insertbefore="menuitem_console"/>
+  <menupopup id="taskPopup">
+    <menuitem id="aup-menuitem" insertafter="downloadmgr"/>
+  </menupopup>
+
+  <!-- View menu -->
+  <menupopup id="view_toolbars_popup">
+    <menuitem id="aup-blockableitems" insertafter="sidebar-menu"/>
   </menupopup>
 
   <!-- Fake sidebar -->
-  <vbox id="box_content">
+  <vbox id="appcontent">
     <splitter id="aup-sidebar-splitter"/>
     <vbox id="aup-sidebar"/>
   </vbox>

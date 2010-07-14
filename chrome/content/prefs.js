@@ -15,7 +15,7 @@
  *
  * The Initial Developer of the Original Code is
  * Wladimir Palant.
- * Portions created by the Initial Developer are Copyright (C) 2006-2008
+ * Portions created by the Initial Developer are Copyright (C) 2006-2009
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -29,13 +29,7 @@
 
 const prefRoot = "extensions.autoproxy.";
 
-var gObjtabClass = "";
-for (let i = 0; i < 20; i++)
-  gObjtabClass += String.fromCharCode("a".charCodeAt(0) + Math.random() * 26);
-
 var prefService = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefService);
-
-var ScriptableInputStream = Components.Constructor("@mozilla.org/scriptableinputstream;1", "nsIScriptableInputStream", "init");
 
 var prefs = {
   lastVersion: null,

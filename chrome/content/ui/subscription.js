@@ -15,7 +15,7 @@
  *
  * The Initial Developer of the Original Code is
  * Wladimir Palant.
- * Portions created by the Initial Developer are Copyright (C) 2006-2008
+ * Portions created by the Initial Developer are Copyright (C) 2006-2009
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -91,8 +91,7 @@ function saveSubscription()
     try {
       file.initWithPath(url);
       var ioService = Cc["@mozilla.org/network/io-service;1"].getService(Ci.nsIIOService); 
-      var protHandler = ioService.getProtocolHandler('file').QueryInterface(Ci.nsIFileProtocolHandler);
-      url = protHandler.newFileURI(file).spec;
+      url = ioService.newFileURI(file).spec;
     } catch (e2) {
       try {
         var uri = Cc["@mozilla.org/network/simple-uri;1"].createInstance(Ci.nsIURI);

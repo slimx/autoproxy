@@ -15,7 +15,7 @@
  *
  * The Initial Developer of the Original Code is
  * Wladimir Palant.
- * Portions created by the Initial Developer are Copyright (C) 2006-2008
+ * Portions created by the Initial Developer are Copyright (C) 2006-2009
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -187,12 +187,34 @@ aup.CommentFilter = CommentFilter;
 /**
  * Abstract base class for filters that can get hits
  * @param {String} text see Filter()
+ * @param {Array of String} domains  (optional) Domains that the filter is restricted to, e.g. ["foo.com", "bar.com", "~baz.com"]
  * @constructor
  * @augments Filter
  */
-function ActiveFilter(text)
+function ActiveFilter(text, domains)
 {
   Filter.call(this, text);
+
+  if (domains != null)
+  {
+    for each (let domain in domains)
+    {
+      if (domain == "")
+        continue;
+
+      let hash = "includeDomains";
+      if (domain[0] == "~")
+      {
+        hash = "excludeDomains";
+        domain = domain.substr(1);
+      }
+
+      if (!this[hash])
+        this[hash] = {__proto__: null};
+
+      this[hash][domain] = true;
+    }
+  }
 }
 ActiveFilter.prototype =
 {
@@ -213,6 +235,63 @@ ActiveFilter.prototype =
    * @type Number
    */
   lastHit: 0,
+
+  /**
+   * Map containing domains that this filter should match on or null if the filter should match on all domains
+   * @type Object
+   */
+  includeDomains: null,
+  /**
+   * Map containing domains that this filter should not match on or null if the filter should match on all domains
+   * @type Object
+   */
+  excludeDomains: null,
+
+  /**
+   * Checks whether this filter is active on a domain.
+   */
+  isActiveOnDomain: function(/**String*/ docDomain) /**Boolean*/
+  {
+    // If the document has no host name, match only if the filter isn't restricted to specific domains
+    if (!docDomain)
+      return (!this.includeDomains);
+
+    if (!this.includeDomains && !this.excludeDomains)
+      return true;
+
+    docDomain = docDomain.replace(/\.+$/, "").toUpperCase();
+
+    while (true)
+    {
+      if (this.includeDomains && docDomain in this.includeDomains)
+        return true;
+      if (this.excludeDomains && docDomain in this.excludeDomains)
+        return false;
+
+      let nextDot = docDomain.indexOf(".");
+      if (nextDot < 0)
+        break;
+      docDomain = docDomain.substr(nextDot + 1);
+    }
+    return (this.includeDomains == null);
+  },
+
+  /**
+   * Checks whether this filter is active only on a domain and its subdomains.
+   */
+  isActiveOnlyOnDomain: function(/**String*/ docDomain) /**Boolean*/
+  {
+    if (!docDomain || !this.includeDomains)
+      return false;
+
+    docDomain = docDomain.replace(/\.+$/, "").toUpperCase();
+
+    for (let domain in this.includeDomains)
+      if (domain != docDomain && domain.indexOf("." + docDomain) != domain.length - docDomain.length - 1)
+        return false;
+
+    return true;
+  },
 
   /**
    * See Filter.serialize()
@@ -246,32 +325,12 @@ aup.ActiveFilter = ActiveFilter;
  */
 function RegExpFilter(text, regexp, contentType, matchCase, domains, thirdParty)
 {
-  ActiveFilter.call(this, text);
+  ActiveFilter.call(this, text, domains ? domains.split("|") : null);
 
   if (contentType != null)
     this.contentType = contentType;
   if (matchCase)
     this.matchCase = matchCase;
-  if (domains != null)
-  {
-    for each (let domain in domains.split("|"))
-    {
-      if (domain == "")
-        continue;
-
-      let hash = "includeDomains";
-      if (domain[0] == "~")
-      {
-        hash = "excludeDomains";
-        domain = domain.substr(1);
-      }
-
-      if (!this[hash])
-        this[hash] = {__proto__: null};
-
-      this[hash][domain] = true;
-    }
-  }
   if (thirdParty != null)
     this.thirdParty = thirdParty;
 
@@ -308,42 +367,6 @@ RegExpFilter.prototype =
   thirdParty: null,
 
   /**
-   * Map containing domains that this filter should match on or null if the filter should match on all domains
-   * @type Object
-   */
-  includeDomains: null,
-  /**
-   * Map containing domains that this filter should not match on or null if the filter should match on all domains
-   * @type Object
-   */
-  excludeDomains: null,
-
-  /**
-   * Checks whether this filter is active on a domain.
-   */
-  isActiveOnDomain: function(/**String*/ docDomain) /**Boolean*/
-  {
-    if (!this.includeDomains && !this.excludeDomains)
-      return true;
-
-    docDomain = docDomain.replace(/\.+$/, "").toUpperCase();
-
-    while (true)
-    {
-      if (this.includeDomains && docDomain in this.includeDomains)
-        return true;
-      if (this.excludeDomains && docDomain in this.excludeDomains)
-        return false;
-
-      let nextDot = docDomain.indexOf(".");
-      if (nextDot < 0)
-        break;
-      docDomain = docDomain.substr(nextDot + 1);
-    }
-    return (this.includeDomains == null);
-  },
-
-  /**
    * Tests whether the URL matches this filters
    * @param {String} location URL to be tested
    * @param {String} contentType content type identifier of the URL
@@ -356,7 +379,7 @@ RegExpFilter.prototype =
     return (this.regexp.test(location) &&
             (RegExpFilter.typeMap[contentType] & this.contentType) != 0 &&
             (this.thirdParty == null || this.thirdParty == thirdParty) &&
-            (!docDomain || this.isActiveOnDomain(docDomain)));
+            this.isActiveOnDomain(docDomain));
   }
 };
 aup.RegExpFilter = RegExpFilter;
@@ -491,7 +514,6 @@ function BlockingFilter(text, regexp, contentType, matchCase, domains, thirdPart
 BlockingFilter.prototype =
 {
   __proto__: RegExpFilter.prototype
-  
 };
 aup.BlockingFilter = BlockingFilter;
 

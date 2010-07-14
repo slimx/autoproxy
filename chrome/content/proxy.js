@@ -42,14 +42,15 @@ var proxy =
 
   init: function()
   {
-    // TODO
+    this.reloadPrefs();
+    prefs.addListener(this.reloadPrefs);
   },
 
   reloadPrefs: function()
   {
     // Refresh validConfigs - array of objects
-    this.validConfigs = this.configToObj(prefs.customProxy) ||
-                            this.configToObj(prefs.knownProxy);
+    proxy.validConfigs = proxy.configToObj(prefs.customProxy) ||
+                            proxy.configToObj(prefs.knownProxy);
 
     /**
      * Refresh proxy name string array (getName) & available proxy servers
@@ -60,14 +61,14 @@ var proxy =
      *
      * newProxyInfo(type, host, port, socks_remote_dns, failoverTimeout, failoverProxy)
      */
-    this.getName = [ aup.getString("directConnect") ];
-    this.server = [ pS.newProxyInfo('direct', '', -1, 0, 0, null) ];
-    for each ( var conf in this.validConfigs) {
-      this.getName.push( conf.name );
-      this.server.push(pS.newProxyInfo(conf.type, conf.host, conf.port, 1, 0, null));
+    proxy.getName = [ aup.getString("directConnect") ];
+    proxy.server = [ pS.newProxyInfo('direct', '', -1, 0, 0, null) ];
+    for each ( var conf in proxy.validConfigs) {
+      proxy.getName.push(conf.name);
+      proxy.server.push(pS.newProxyInfo(conf.type, conf.host, conf.port, 1, 0, null));
     }
 
-    this.nameOfDefaultProxy = this.getName[ prefs.defaultProxy ];
+    proxy.nameOfDefaultProxy = proxy.getName[prefs.defaultProxy];
 
     /**
      * Refresh defaultProxy (nsIProxyInfo)
@@ -77,7 +78,7 @@ var proxy =
      *   1 - customProxy/knownProxy.length: corresponding proxy
      *   other: invalid, take 1 as it's value(use the first proxy)
      */
-    this.defaultProxy = this.server[ prefs.defaultProxy ] || this.server[1];
+    proxy.defaultProxy = proxy.server[prefs.defaultProxy] || proxy.server[1];
 
     /**
      * Refresh fallbackProxy (nsIProxyInfo)
@@ -88,47 +89,66 @@ var proxy =
      *   1 - customProxy/knownProxy.length: corresponding proxy
      *   other: invalid, take 0 as it's value(direct connect)
      */
-    if ( prefs.fallbackProxy == -1 ) this.fallbackProxy = this.defaultProxy;
-    else this.fallbackProxy = this.server[ prefs.fallbackProxy ] || this.server[0];
+    if ( prefs.fallbackProxy == -1 ) proxy.fallbackProxy = proxy.defaultProxy;
+    else proxy.fallbackProxy = proxy.server[prefs.fallbackProxy] || proxy.server[0];
 
     // Register/Unregister proxy filter & refresh shouldProxy() for specified mode
-    if ( prefs.proxyMode == "disabled" ) pS.unregisterFilter(this);
+    if ( prefs.proxyMode == "disabled" ) pS.unregisterFilter(proxy);
     else {
       if ( prefs.proxyMode == "global" ) policy.shouldProxy = function() { return true; };
       else policy.shouldProxy = policy.autoMatching;
 
-      pS.unregisterFilter(this);
-      pS.registerFilter(this, 0);
+      pS.unregisterFilter(proxy);
+      pS.registerFilter(proxy, 0);
     }
   },
 
+  /**
+   * Convert proxy config(e.g.: prefs.knownProxy) to objects for convenient usage later
+   *
+   * @param config {String}
+   * @return {Array} of objects
+   */
   configToObj: function(config)
   {
-      if(config=="")return false;
-      var array = [];
-      var proxyAttrArray = config.split("$");
-      for each(var i in proxyAttrArray)
-      {
-          var proxyAttr = i.split(";");
-          var proxy={};
-          proxy.name = proxyAttr[0];
-          proxy.host = proxyAttr[1]==""?"127.0.0.1":proxyAttr[1];
-          proxy.port = proxyAttr[2];
-          proxy.type = proxyAttr[3]==""?"http":proxyAttr[3];
-          array.push(proxy);
-      }
-      return array.length==0?false:array;
+    var proxyObjArray = [];
+
+    for each (var proxyAttr in config.split('$')) {
+      proxyAttr = proxyAttr.split(';');
+      if (proxyAttr.length != 4 || proxyAttr[0] == '' || isNaN(proxyAttr[2]))
+        continue;
+
+      var proxyObj = {};
+      proxyObj.name = proxyAttr[0];
+      proxyObj.host = proxyAttr[1] == '' ? '127.0.0.1' : proxyAttr[1];
+      proxyObj.port = proxyAttr[2];
+      proxyObj.type = /^socks4?$/i.test(proxyAttr[3]) ? proxyAttr[3] : 'http';
+      proxyObjArray.push(proxyObj);
+    }
+
+    return proxyObjArray.length == 0 ? false : proxyObjArray;
   },
 
   /**
    * Checks whether the location's scheme is proxyable
-   * @param location  {nsIURI}
+   *
+   * @param location {nsIURI}
    * @return {Boolean}
    */
   isProxyableScheme: function(location)
   {
     return ["http", "https", "ftp", "gopher"].some(
       function(scheme){return location.scheme==scheme} );
+  },
+
+  /**
+   * Switch to specified proxy mode
+   * @param mode {String} see this.mode
+   */
+  switchToMode: function(mode)
+  {
+    prefs.proxyMode = mode;
+    prefs.save();
   },
 
   //
@@ -148,4 +168,3 @@ aup.proxy = proxy;
 // TODO: if ( customProxy == knownProxy ) customProxy = "";
 // TODO: ";" & "$" is not allowed in proxy name
 // TODO: editProxyServer.js
-// TODO: call this.reloadPrefs only when necessary?

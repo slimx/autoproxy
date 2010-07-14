@@ -64,10 +64,8 @@ var policy =
   ContentType: "",  // String
   ContentURI: null, // nsIURI
 
-  init: function()
-  {
-    var types = ["OTHER", "SCRIPT", "IMAGE", "STYLESHEET", "OBJECT", "SUBDOCUMENT",
-      "DOCUMENT", "XBL", "PING", "XMLHTTPREQUEST", "OBJECT_SUBREQUEST", "DTD", "FONT", "MEDIA"];
+  init: function() {
+    var types = ["OTHER", "SCRIPT", "IMAGE", "STYLESHEET", "OBJECT", "SUBDOCUMENT", "DOCUMENT", "XBL", "PING", "XMLHTTPREQUEST", "OBJECT_SUBREQUEST", "DTD", "FONT", "MEDIA"];
 
     // type constant by type description and type description by type constant
     this.type = {};
@@ -110,8 +108,7 @@ var policy =
         contentType = this.type.BACKGROUND;
 
       // Fix type for objects misrepresented as frames or images
-      if (contentType != this.type.OBJECT && (node instanceof Ci.nsIDOMHTMLObjectElement ||
-                                              node instanceof Ci.nsIDOMHTMLEmbedElement ))
+      if (contentType != this.type.OBJECT && (node instanceof Ci.nsIDOMHTMLObjectElement || node instanceof Ci.nsIDOMHTMLEmbedElement))
         contentType = this.type.OBJECT;
 
       docDomain = this.getHostname(wnd.location.href);
@@ -127,9 +124,9 @@ var policy =
     //   * no sidebar window can be used to display extension's http request;
     //   * shouldLoad() doesn't check extension's request, any way to do this?
     //     * just like onChannelRedirect() did for 301/302 redirection.
-    if ( location == this.ContentURI ) {
-      var data = DataContainer.getDataForWindow(wnd);
-      data.addNode(wnd.top, node, contentType, docDomain, thirdParty, locationText, match);
+    if (location == this.ContentURI) {
+      var data = RequestList.getDataForWindow(wnd);
+      data.addNode(node, contentType, docDomain, thirdParty, locationText, match);
     }
 
     if (match&&arguments.length==1)
@@ -180,20 +177,23 @@ var policy =
   //
   // nsIContentPolicy interface implementation
   //
-  shouldLoad: function(contentType, location, requestOrigin, node, mimeTypeGuess, extra) {
-    if ( proxy.isProxyableScheme(location) ) {
+  shouldLoad: function(contentType, contentLocation, requestOrigin, node, mimeTypeGuess, extra)
+  {
+    if ( proxy.isProxyableScheme(contentLocation) ) {
       // Interpret unknown types as "other"
-      if ( !(contentType in this.typeDescr) ) contentType = this.type.OTHER;
+      if (!(contentType in this.typeDescr))
+        contentType = this.type.OTHER;
 
       this.Wnd = getWindow(node);
       this.Node = node;
       this.ContentType = contentType;
-      this.ContentURI = unwrapURL(location);
+      this.ContentURI = unwrapURL(contentLocation);
     }
     return ok;
   },
 
-  shouldProcess: function(contentType, contentLocation, requestOrigin, insecNode, mimeType, extra) {
+  shouldProcess: function(contentType, contentLocation, requestOrigin, insecNode, mimeType, extra)
+  {
     return ok;
   },
 
@@ -221,13 +221,14 @@ var policy =
       for each (let context in contexts)
       {
         // Did we record the original request in its own window?
-        let data = DataContainer.getDataForWindow(context, true);
+        let data = RequestList.getDataForWindow(context, true);
         if (data)
           info = data.getURLInfo(oldChannel.originalURI.spec);
 
         if (info)
         {
-          let node = (info.nodes.length ? info.nodes[info.nodes.length - 1] : context.document);
+          let nodes = info.nodes;
+          let node = (nodes.length > 0 ? nodes[nodes.length - 1] : context.document);
 
           this.Wnd = context;
           this.Node = node;
@@ -239,10 +240,10 @@ var policy =
         }
       }
     }
-    catch (e)
+    catch (e if (e != Cr.NS_BASE_STREAM_WOULD_BLOCK))
     {
       // We shouldn't throw exceptions here - this will prevent the redirect.
-      dump("\nAutoProxy: Unexpected error in policy.onChannelRedirect: " + e + "\n");
+      dump("AutoProxy: Unexpected error in policy.onChannelRedirect: " + e + "\n");
     }
   },
 
@@ -257,29 +258,27 @@ var policy =
     if (wnd.closed)
       return;
 
-    var wndData = aup.getDataForWindow(wnd);
+    var wndData = RequestList.getDataForWindow(wnd);
     var data = wndData.getAllLocations();
     for (var i = start; i < data.length; i++) {
       if (i - start >= 20) {
         // Allow events to process
-        createTimer(function() {policy.refilterWindowInternal(wnd, i);}, 0);
+        runAsync(this.refilterWindowInternal, this, wnd, i);
         return;
       }
 
-      if (!data[i].filter || data[i].filter instanceof WhitelistFilter) {
-        var nodes = data[i].nodes;
-        data[i].nodes = [];
-        for (var j = 0; j < nodes.length; j++) {
-        }
+      if (!data[i].filter || data[i].filter instanceof WhitelistFilter)
+      {
+        let nodes = data[i].clearNodes()
       }
     }
 
-    aup.DataContainer.notifyListeners(wnd, "invalidate", data);
+    wndData.notifyListeners("invalidate", data);
   },
 
   // Calls refilterWindowInternal delayed to allow events to process
   refilterWindow: function(wnd) {
-    createTimer(function() {policy.refilterWindowInternal(wnd, 0);}, 0);
+    runAsync(this, this.refilterWindowInternal, wnd, 0);
   }
 };
 

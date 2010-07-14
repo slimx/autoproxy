@@ -15,16 +15,15 @@
  *
  * The Initial Developer of the Original Code is
  * Wladimir Palant.
- * Portions created by the Initial Developer are Copyright (C) 2006-2008
+ * Portions created by the Initial Developer are Copyright (C) 2006-2009
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
  *
  * ***** END LICENSE BLOCK ***** */
 
-/*
+/**
  * Draws a blinking border for a list of matching nodes.
- * This file is included from AutoProxy.js.
  */
 
 var flasher = {
@@ -34,22 +33,22 @@ var flasher = {
 
   flash: function(nodes) {
     this.stop();
-    if (!nodes)
+    if (!nodes || !nodes.length)
       return;
 
-    nodes = nodes.slice();
-    if (nodes.length && prefs.flash_scrolltoitem && ("document" in nodes[0] || nodes[0].ownerDocument)) {
+    if (prefs.flash_scrolltoitem && ("document" in nodes[0] || nodes[0].ownerDocument)) {
       // Ensure that at least one node is visible when flashing
       var wnd = ("document" in nodes[0] ? nodes[0] : nodes[0].ownerDocument.defaultView);
       try {
-        var viewer = aup.getBrowserInWindow(
-                        wnd.QueryInterface(Ci.nsIInterfaceRequestor)
-                           .getInterface(Ci.nsIWebNavigation)
-                           .QueryInterface(Ci.nsIDocShellTreeItem)
-                           .rootTreeItem
-                           .QueryInterface(Ci.nsIInterfaceRequestor)
-                           .getInterface(Ci.nsIDOMWindow)
-                           .wrappedJSObject)
+        var viewer = wnd.QueryInterface(Ci.nsIInterfaceRequestor)
+                        .getInterface(Ci.nsIWebNavigation)
+                        .QueryInterface(Ci.nsIDocShellTreeItem)
+                        .rootTreeItem
+                        .QueryInterface(Ci.nsIInterfaceRequestor)
+                        .getInterface(Ci.nsIDOMWindow)
+                        .document.getElementById("aup-hooks")
+                        .wrappedJSObject
+                        .getBrowser()
                         .markupDocumentViewer;
         viewer.scrollToNode(nodes[0]);
       } catch(e) {}
@@ -74,12 +73,12 @@ var flasher = {
 
     this.count++;
 
-    this.timer = createTimer(function() {flasher.doFlash()}, 300);
+    this.timer = window.setTimeout(function() {flasher.doFlash()}, 300);
   },
 
   stop: function() {
     if (this.timer) {
-      this.timer.cancel();
+      window.clearTimeout(this.timer);
       this.timer = null;
     }
 
@@ -92,7 +91,7 @@ var flasher = {
   setOutline: function(value) {
     for (var i = 0; i < this.nodes.length; i++)
       if ("style" in this.nodes[i])
-        this.nodes[i].style.MozOutline = value;
+        this.nodes[i].style.outline = value;
   },
 
   switchOn: function() {
@@ -103,5 +102,3 @@ var flasher = {
     this.setOutline("none");
   }
 };
-
-aup.flasher = flasher;
