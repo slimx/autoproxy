@@ -97,6 +97,9 @@ var prefs = {
       this.currentVersion = aup.getInstalledVersion();
       this.save();
     }
+
+    // Add observers for pref changes
+    prefs.addObservers();
   },
 
   // Loads a pref and stores it as a property of the object
@@ -125,9 +128,8 @@ var prefs = {
   // Reloads the preferences
   reload: function() {
     // Load data from prefs.js
-    for each (var pref in this.prefList)
-      this.loadPref(pref);
-
+    for (let i = 0; i < this.prefList.length; i++)
+      this.loadPref(this.prefList[i]);
 
     // Fire pref listeners
     for each (var listener in this.listeners)
@@ -138,8 +140,8 @@ var prefs = {
   save: function() {
     this.disableObserver = true;
 
-    for each (var pref in this.prefList)
-      this.savePref(pref);
+    for (let i = 0; i < this.prefList.length; i++)
+      this.savePref(this.prefList[i]);
 
     this.disableObserver = false;
 
@@ -179,5 +181,4 @@ var prefs = {
   QueryInterface: XPCOMUtils.generateQI([Ci.nsISupportsWeakReference, Ci.nsIObserver])
 };
 
-prefs.addObservers();
 aup.prefs = prefs;

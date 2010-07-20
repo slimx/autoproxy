@@ -563,7 +563,7 @@ function exportList()
 
           // Find version requirements of this filter
           let filterVersion;
-          if (/^(?:@@)?\|\|/.test(filter.text) || /\^/.test(filter.text))
+          if (/^(?:@@)?\|\|/.test(filter.text) || (!aup.Filter.regexpRegExp.test(filter.text) && /\^/.test(filter.text)))
             filterVersion = "0.3.0";
           else
             filterVersion = "0.1.0";
@@ -1700,6 +1700,8 @@ let treeView = {
       let newIndex = (subscription.filters == subscription._sortedFilters || newSortedIndex >= subscription._sortedFilters.length ? newSortedIndex : subscription.filters.indexOf(subscription._sortedFilters[newSortedIndex]));
       if (oldIndex < 0 || newIndex < 0)
         return;
+      if (oldSubscription == subscription && (newIndex == oldIndex || newIndex == oldIndex + 1))
+        return;
 
       {
         if (!oldSubscription.hasOwnProperty("filters"))
@@ -1765,6 +1767,8 @@ let treeView = {
 
       treeView.selectRow(newRow);
     }
+
+    onChange();
   },
 
   getCellValue: function() {return null},
@@ -2697,7 +2701,6 @@ let treeView = {
       subscriptions.push(subscription.__proto__);
     }
 
-    subscriptionWrappers = {__proto__: null};
     filterWrappers = {__proto__: null};
 
     for each (let subscription in filterStorage.subscriptions.slice())

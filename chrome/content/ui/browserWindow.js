@@ -25,7 +25,6 @@
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
-var aupHideImageManager;
 var RequestList = aup.RequestList;
 
 /**
@@ -38,7 +37,7 @@ let eventHandlers = [
   ["aup-status-popup", "popupshowing", aupFillPopup],
   ["aup-toolbar-popup", "popupshowing", aupFillPopup],
   ["aup-command-settings", "command", function() { aup.openSettingsDialog(); }],
-  ["aup-command-sidebar", "command", aupToggleSidebar],
+  ["aup-command-sidebar", "command", toggleSidebar],
   ["aup-command-togglesitewhitelist", "command", function() { toggleFilter(siteWhitelist); }],
   ["aup-command-toggleshowintoolbar", "command", function() { aupTogglePref("showintoolbar"); }],
   ["aup-command-toggleshowinstatusbar", "command", function() { aupTogglePref("showinstatusbar"); }],
@@ -72,20 +71,24 @@ let progressListener = null;
  */
 let aupHooks = E("aup-hooks");
 
+/**
+ * Window of the detached list of blockable items (might be null or closed).
+ * @type nsIDOMWindow
+ */
+let detachedSidebar = null;
+
 aupInit();
 
 function aupInit() {
   // Initialize app hooks
-  for each (let hook in ["getBrowser", "addTab", "onInit"])
+  for each (let hook in ["getBrowser", "addTab", "getToolbox", "getDefaultToolbar", "toolbarInsertBefore"])
   {
     let handler = aupHooks.getAttribute(hook);
     if (handler)
       aupHooks[hook] = new Function(handler);
   }
-  aupHooks.hasToolbar = (aupHooks.getAttribute("hasToolbar") == "true");
 
   // Process preferences
-  window.aupDetachedSidebar = null;
   aupReloadPrefs();
 
   // Copy the menu from status bar icon to the toolbar
@@ -114,7 +117,8 @@ function aupInit() {
   }
   let paletteButton = aupGetPaletteButton();
   copyMenu(E("aup-toolbarbutton"));
-  copyMenu(paletteButton);
+  if (paletteButton != E("aup-toolbarbutton"))
+    copyMenu(paletteButton);
 
   // Palette button elements aren't reachable by ID, create a lookup table
   let paletteButtonIDs = {};
@@ -171,23 +175,41 @@ function aupInit() {
   } catch(e) {}
 
   // First run actions
-  if (!("doneFirstRunActions" in prefs) && aup.versionComparator.compare(prefs.lastVersion, "0.0") <= 0)
+  if (!("doneFirstRunActions" in prefs))
   {
     // Don't repeat first run actions if new window is opened
     prefs.doneFirstRunActions = true;
 
-    // Add AUP icon to toolbar if necessary
-    aup.runAsync(aupInstallInToolbar);
-
     // Show subscriptions dialog if the user doesn't have any subscriptions yet
-    aup.runAsync(aupShowSubscriptions);
+    if (aup.versionComparator.compare(prefs.lastVersion, "0.0") <= 0)
+      aup.runAsync(aupShowSubscriptions);
   }
 
-  // Run application-specific initialization
-  if (aupHooks.onInit)
-    aupHooks.onInit();
+  // Window-specific first run actions
+  if (!("doneFirstRunActions " + window.location.href in prefs))
+  {
+    // Don't repeat first run actions for this window any more
+    prefs["doneFirstRunActions " + window.location.href] = true;
 
-  aup.runAsync(aupInitImageManagerHiding);
+    let lastVersion = aupHooks.getAttribute("currentVersion") || "0.0";
+    if (lastVersion != prefs.currentVersion)
+    {
+      aupHooks.setAttribute("currentVersion", prefs.currentVersion);
+      document.persist("aup-hooks", "currentVersion");
+
+      let needInstall = (aup.versionComparator.compare(lastVersion, "0.0") <= 0);
+      if (!needInstall)
+      {
+        // Before version 1.1 we didn't add toolbar icon in SeaMonkey, do it now
+        needInstall = aup.versionComparator.compare(lastVersion, "1.1") < 0 &&
+                      Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULAppInfo).ID == "{92650c4d-4b8e-4d2a-b7eb-24ecf4f6b63a}";
+      }
+
+      // Add AUP icon to toolbar if necessary
+      if (needInstall)
+        aup.runAsync(aupInstallInToolbar);
+    }
+  }
 }
 
 function aupUnload()
@@ -221,7 +243,7 @@ function aupReloadPrefs() {
       element.hidden = !prefs.showintoolbar;
 
     // HACKHACK: Show status bar icon instead of toolbar icon if the application doesn't have a toolbar icon
-    if (element.hidden && element.tagName == "statusbarpanel" && !aupHooks.hasToolbar)
+    if (element.hidden && element.tagName == "statusbarpanel" && !aupHooks.getDefaultToolbar)
       element.hidden = !prefs.showintoolbar;
 
     if (currentlyShowingInToolbar != prefs.showintoolbar)
@@ -254,23 +276,40 @@ function aupReloadPrefs() {
   updateElement(aupGetPaletteButton());
 }
 
-function aupInitImageManagerHiding() {
-  if (!aup || typeof aupHideImageManager != "undefined")
-    return;
+/**
+ * Tests whether image manager context menu entry should be hidden with user's current preferences.
+ * @return Boolean
+ */
+function shouldHideImageManager()
+{
+  if (typeof arguments.callee._result != "undefined")
+    return arguments.callee._result;
 
-  aupHideImageManager = false;
-  if (prefs.hideimagemanager && "@mozilla.org/permissionmanager;1" in Cc) {
-    try {
-      aupHideImageManager = true;
-      var permissionManager = Cc["@mozilla.org/permissionmanager;1"].getService(Ci.nsIPermissionManager);
-      var enumerator = permissionManager.enumerator;
-      while (aupHideImageManager && enumerator.hasMoreElements()) {
-        var item = enumerator.getNext().QueryInterface(Ci.nsIPermission);
+  let result = false;
+  if (prefs.hideimagemanager && "@mozilla.org/permissionmanager;1" in Cc)
+  {
+    try
+    {
+      result = true;
+      let enumerator = Cc["@mozilla.org/permissionmanager;1"].getService(Ci.nsIPermissionManager).enumerator;
+      while (enumerator.hasMoreElements())
+      {
+        let item = enumerator.getNext().QueryInterface(Ci.nsIPermission);
         if (item.type == "image" && item.capability == Ci.nsIPermissionManager.DENY_ACTION)
-          aupHideImageManager = false;
+        {
+          result = false;
+          break;
+        }
       }
-    } catch(e) {}
+    }
+    catch(e)
+    {
+      result = false;
+    }
   }
+
+  arguments.callee._result = result;
+  return result;
 }
 
 function aupConfigureKey(key, value) {
@@ -360,8 +399,9 @@ function handleLinkClick(/**Event*/ event)
 }
 
 // Finds the toolbar button in the toolbar palette
-function aupGetPaletteButton() {
-  var toolbox = E("navigator-toolbox") || E("mail-toolbox");
+function aupGetPaletteButton()
+{
+  let toolbox = (aupHooks.getToolbox ? aupHooks.getToolbox() : null);
   if (!toolbox || !("palette" in toolbox) || !toolbox.palette)
     return null;
 
@@ -373,17 +413,15 @@ function aupGetPaletteButton() {
 }
 
 // Check whether we installed the toolbar button already
-function aupInstallInToolbar() {
-  if (!E("aup-toolbarbutton")) {
-    var insertBeforeBtn = null;
-    var toolbar = E("nav-bar");
-    if (!toolbar) {
-      insertBeforeBtn = "button-junk";
-      toolbar = E("mail-bar");
-    }
-
-    if (toolbar && "insertItem" in toolbar) {
-      var insertBefore = (insertBeforeBtn ? E(insertBeforeBtn) : null);
+function aupInstallInToolbar()
+{
+  let tb = E("aup-toolbarbutton");
+  if (!tb || tb.parentNode.localName == "toolbarpalette")
+  {
+    let toolbar = (aupHooks.getDefaultToolbar ? aupHooks.getDefaultToolbar() : null);
+    let insertBefore = (aupHooks.toolbarInsertBefore ? aupHooks.toolbarInsertBefore() : null);
+    if (toolbar && "insertItem" in toolbar)
+    {
       if (insertBefore && insertBefore.parentNode != toolbar)
         insertBefore = null;
 
@@ -391,33 +429,6 @@ function aupInstallInToolbar() {
 
       toolbar.setAttribute("currentset", toolbar.currentSet);
       document.persist(toolbar.id, "currentset");
-
-      // HACKHACK: Make sure icon is added to both main window and message window in Thunderbird
-      var override = null;
-      if (window.location.href == "chrome://messenger/content/messenger.xul")
-        override = "chrome://messenger/content/messageWindow.xul#mail-bar";
-      else if (window.location.href == "chrome://messenger/content/messageWindow.xul")
-        override = "chrome://messenger/content/messenger.xul#mail-bar";
-
-      if (override) {
-        try {
-          var rdf = Cc["@mozilla.org/rdf/rdf-service;1"].getService(Ci.nsIRDFService);
-          var localstore = rdf.GetDataSource("rdf:local-store");
-          var resource = rdf.GetResource(override);
-          var arc = rdf.GetResource("currentset");
-          var target = localstore.GetTarget(resource, arc, true);
-          var currentSet = (target ? target.QueryInterface(Ci.nsIRDFLiteral).Value : E('mail-bar').getAttribute("defaultset"));
-
-          if (/\bbutton-junk\b/.test(currentSet))
-            currentSet = currentSet.replace(/\bbutton-junk\b/, "aup-toolbarbutton,button-junk");
-          else
-            currentSet = currentSet + ",aup-toolbarbutton";
-
-          if (target)
-            localstore.Unassert(resource, arc, target, true);
-          localstore.Assert(resource, arc, rdf.GetLiteral(currentSet), true);
-        } catch (e) {}
-      }
     }
   }
 }
@@ -429,7 +440,9 @@ function aupShowSubscriptions()
   for each (let subscription in filterStorage.subscriptions)
     if (subscription instanceof aup.DownloadableSubscription)
       return;
-  window.openDialog("chrome://autoproxy/content/ui/tip_subscriptions.xul", "_blank", "chrome,centerscreen,resizable,dialog=no");
+
+  if (!aupHooks.addTab || aupHooks.addTab("chrome://autoproxy/content/ui/tip_subscriptions.xul") === false)
+    window.openDialog("chrome://autoproxy/content/ui/tip_subscriptions.xul", "_blank", "chrome,centerscreen,resizable,dialog=no");
 }
 
 function aupFillTooltip(event) {
@@ -516,20 +529,19 @@ function aupFillTooltip(event) {
  */
 function getCurrentLocation() /**nsIURI*/
 {
-  if ("currentHeaderData" in window && "content-base" in currentHeaderData)
+  if ("currentHeaderData" in window && "content-base" in window.currentHeaderData)
   {
     // Thunderbird blog entry
     return aup.unwrapURL(window.currentHeaderData["content-base"].headerValue);
   }
-  else if ("gDBView" in window)
+  else if ("currentHeaderData" in window && "from" in window.currentHeaderData)
   {
     // Thunderbird mail/newsgroup entry
     try
     {
-      let msgHdr = gDBView.hdrForFirstSelectedMessage;
       let headerParser = Cc["@mozilla.org/messenger/headerparser;1"].getService(Ci.nsIMsgHeaderParser);
-      let emailAddress = headerParser.extractHeaderAddressMailboxes(null, msgHdr.author);
-      return "mailto:" + emailAddress.replace(/^[\s"]+/, "").replace(/[\s"]+$/, "").replace(/\s/g, "%20");
+      let emailAddress = headerParser.extractHeaderAddressMailboxes(window.currentHeaderData.from.headerValue);
+      return aup.makeURL("mailto:" + emailAddress.replace(/^[\s"]+/, "").replace(/[\s"]+$/, "").replace(/\s/g, "%20"));
     }
     catch(e)
     {
@@ -621,34 +633,27 @@ function aupFillPopup(event) {
   popup.insertBefore(document.createElement("menuseparator"), popup.firstChild.nextSibling);
 }
 
-// Only show context menu on toolbar button in vertical toolbars
-function aupCheckToolbarContext(event) {
-  var toolbox = event.target;
-  while (toolbox && toolbox.tagName != "toolbox")
-    toolbox = toolbox.parentNode;
-
-  if (!toolbox || toolbox.getAttribute("vertical") != "true")
-    return;
-
-  event.target.open = true;
-  event.preventDefault();
-}
-
 function aupIsSidebarOpen() {
   // Test whether detached sidebar window is open
-  if (window.aupDetachedSidebar && !window.aupDetachedSidebar.closed)
+  if (detachedSidebar && !detachedSidebar.closed)
     return true;
 
   var sidebar = E("aup-sidebar");
   return (sidebar ? !sidebar.hidden : false);
 }
 
-function aupToggleSidebar() {
-  if (window.aupDetachedSidebar && !window.aupDetachedSidebar.closed)
-    window.aupDetachedSidebar.close();
-  else {
+function toggleSidebar()
+{
+  if (detachedSidebar && !detachedSidebar.closed)
+  {
+    detachedSidebar.close();
+    detachedSidebar = null;
+  }
+  else
+  {
     var sidebar = E("aup-sidebar");
-    if (sidebar && (!prefs.detachsidebar || !sidebar.hidden)) {
+    if (sidebar && (!prefs.detachsidebar || !sidebar.hidden))
+    {
       E("aup-sidebar-splitter").hidden = !sidebar.hidden;
       E("aup-sidebar-browser").setAttribute("src", sidebar.hidden ? "chrome://autoproxy/content/ui/sidebar.xul" : "about:blank");
       sidebar.hidden = !sidebar.hidden;
@@ -656,7 +661,7 @@ function aupToggleSidebar() {
         aupHooks.getBrowser().contentWindow.focus();
     }
     else
-      window.aupDetachedSidebar = window.openDialog("chrome://autoproxy/content/ui/sidebarDetached.xul", "_blank", "chrome,resizable,dependent,dialog=no,width=600,height=300");
+      detachedSidebar = window.openDialog("chrome://autoproxy/content/ui/sidebarDetached.xul", "_blank", "chrome,resizable,dependent,dialog=no");
   }
 
   let menuItem = E("aup-blockableitems");
@@ -715,7 +720,7 @@ function aupExecuteAction(action, e)
       aupFillPopup(e);
       break;
     case 1: //proxyable items
-      aupToggleSidebar();
+      toggleSidebar();
       break;
     case 2: //preference
       aup.openSettingsDialog();

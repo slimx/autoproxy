@@ -22,10 +22,20 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-function fillInVersion() {
-  var versionField = document.getElementById("version");
-  versionField.value = aup.getInstalledVersion();
+@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 
-  // Work-around for bug 494901, change align attribute to ensure correct positioning
-  versionField.parentNode.setAttribute("align", "baseline");
+#aup-toolbarbutton .toolbarbutton-icon
+{
+  margin-top: 5px;
+}
+#aup-toolbarbutton > .toolbarbutton-menubutton-stack > .toolbarbutton-menubutton-dropmarker
+{
+  margin-bottom: 0px;
+}
+@-moz-document domain("mail")
+{
+  #aup-toolbarbutton .toolbarbutton-menubutton-button
+  {
+    -moz-box-orient: vertical;
+  }
 }

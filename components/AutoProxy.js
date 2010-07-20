@@ -99,9 +99,6 @@ const aup =
       if (outer)
         throw Cr.NS_ERROR_NO_AGGREGATION;
 
-      if (!aup.initialized)
-        throw Cr.NS_ERROR_NOT_INITIALIZED;
-
       return aup.QueryInterface(iid);
     }
   },
@@ -315,20 +312,11 @@ const aup =
       return;
     this.initialized = true;
 
-    loader.loadSubScript('chrome://autoproxy/content/utils.js');
-    loader.loadSubScript('chrome://autoproxy/content/filterClasses.js');
-    loader.loadSubScript('chrome://autoproxy/content/subscriptionClasses.js');
-    loader.loadSubScript('chrome://autoproxy/content/filterStorage.js');
-    loader.loadSubScript('chrome://autoproxy/content/matcher.js');
-    loader.loadSubScript('chrome://autoproxy/content/filterListener.js');
-    loader.loadSubScript('chrome://autoproxy/content/proxy.js');
-    loader.loadSubScript('chrome://autoproxy/content/policy.js');
-    loader.loadSubScript('chrome://autoproxy/content/requests.js');
-    loader.loadSubScript('chrome://autoproxy/content/prefs.js');
-    loader.loadSubScript('chrome://autoproxy/content/synchronizer.js');
-
     timeLine.log("calling prefs.init()");
     prefs.init();
+
+    timeLine.log("calling filterListener.init()");
+    filterListener.init();
 
     timeLine.log("calling proxy.init()");
     proxy.init();
@@ -336,11 +324,11 @@ const aup =
     timeLine.log("calling filterStorage.init()");
     filterStorage.init();
 
-    timeLine.log("calling proxy.init()");
-    proxy.init();
-
     timeLine.log("calling policy.init()");
     policy.init();
+
+    timeLine.log("calling synchronizer.init()");
+    synchronizer.init();
 
     timeLine.leave("aup.init() done");
   },
@@ -436,11 +424,7 @@ const aup =
                     windowMediator.getMostRecentWindow("Songbird:Main") ||
                     windowMediator.getMostRecentWindow("emusic:window");
     let aupHooks = currentWindow ? currentWindow.document.getElementById("aup-hooks") : null;
-    if (aupHooks && aupHooks.addTab)
-    {
-      aupHooks.addTab(url);
-    }
-    else
+    if (!aupHooks || !aupHooks.addTab || aupHooks.addTab(url) === false)
     {
       let protocolService = Cc["@mozilla.org/uriloader/external-protocol-service;1"].getService(Ci.nsIExternalProtocolService);
       protocolService.loadURI(makeURL(url), null);
@@ -480,6 +464,22 @@ if (XPCOMUtils.generateNSGetFactory)
     var NSGetFactory = XPCOMUtils.generateNSGetFactory([Initializer, AUPComponent]);
 else
     var NSGetModule = XPCOMUtils.generateNSGetModule([Initializer, AUPComponent]);
+
+/*
+ * Loading additional files
+ */
+loader.loadSubScript('chrome://autoproxy/content/utils.js');
+loader.loadSubScript('chrome://autoproxy/content/filterClasses.js');
+loader.loadSubScript('chrome://autoproxy/content/subscriptionClasses.js');
+loader.loadSubScript('chrome://autoproxy/content/filterStorage.js');
+loader.loadSubScript('chrome://autoproxy/content/matcher.js');
+loader.loadSubScript('chrome://autoproxy/content/filterListener.js');
+loader.loadSubScript('chrome://autoproxy/content/proxy.js');
+loader.loadSubScript('chrome://autoproxy/content/policy.js');
+loader.loadSubScript('chrome://autoproxy/content/requests.js');
+loader.loadSubScript('chrome://autoproxy/content/prefs.js');
+loader.loadSubScript('chrome://autoproxy/content/synchronizer.js');
+
 /*
  * Core Routines
  */
@@ -512,7 +512,7 @@ var timeLine = {
     let padding = [];
     for (let i = message.toString().length; i < 40; i++)
       padding.push(" ");
-    dump("ABP timeline: " + message + padding.join("") + "\t (" + diff + ")\n");
+    dump("AUP timeline: " + message + padding.join("") + "\t (" + diff + ")\n");
   },
 
   /**

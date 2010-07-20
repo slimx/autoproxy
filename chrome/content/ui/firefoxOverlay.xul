@@ -33,9 +33,11 @@
     <popupset id="aup-popupset"/>
     <keyset id="aup-keyset"/>
     <commandset id="aup-commandset"/>
-    <box id="aup-hooks" hasToolbar="true"
+    <box id="aup-hooks"
       getBrowser="return window.gBrowser;"
-      addTab="window.gBrowser.loadOneTab(arguments[0], null, null, null, false);"/>
+      addTab="window.gBrowser.loadOneTab(arguments[0], null, null, null, false);"
+      getToolbox="return E('navigator-toolbox')"
+      getDefaultToolbar="return E('nav-bar');"/>
   </window>
 
   <!-- Songbird window -->
@@ -43,9 +45,11 @@
     <popupset id="aup-popupset"/>
     <keyset id="aup-keyset"/>
     <commandset id="aup-commandset"/>
-    <box id="aup-hooks" hasToolbar="true"
+    <box id="aup-hooks"
       getBrowser="return window.gBrowser;"
-      addTab="window.gBrowser.loadOneTab(arguments[0], null, null, null, false);"/>
+      addTab="window.gBrowser.loadOneTab(arguments[0], null, null, null, false);"
+      getToolbox="return E('navigator-toolbox')"
+      getDefaultToolbar="return E('nav-bar');"/>
   </sb-support>
 
   <!-- Status bar -->
@@ -56,8 +60,7 @@
   <!-- Toolbar -->
   <toolbarpalette id="BrowserToolbarPalette">
     <toolbarbutton id="aup-toolbarbutton" type="menu-button" insertbefore="print-button"
-        class="chromeclass-toolbar-additional"
-        oncontextmenu="aupCheckToolbarContext(event)"/>
+        class="chromeclass-toolbar-additional"/>
   </toolbarpalette>
 
   <!-- Tools menu -->

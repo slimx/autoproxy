@@ -30,6 +30,8 @@
 const dataSeed = Math.random();    // Make sure our properties have randomized names
 const docDataProp = "aupDocData" + dataSeed;
 const nodeDataProp = "aupNodeData" + dataSeed;
+const nodeIndexProp = "aupNodeIndex" + dataSeed;
+var nodeIndex = 0;
 
 function RequestList(wnd) {
   this.entries = {__proto__: null};
@@ -55,6 +57,11 @@ RequestList.prototype = {
    * @type Integer
    */
   _compactCounter: 0,
+  /**
+   * Time in milliseconds of the last list cleanup, makes sure cleanup isn't triggered too often.
+   * @type Integer
+   */
+  _lastCompact: 0,
 
   /**
    * Attaches this request list to a window.
@@ -125,7 +132,7 @@ RequestList.prototype = {
     let entry;
     let isNew = !(key in this.entries);
     if (isNew)
-      this.entries[key] = this.urls[location] = entry = new RequestEntry(contentType, docDomain, thirdParty, location);
+      this.entries[key] = this.urls[location] = entry = new RequestEntry(key, contentType, docDomain, thirdParty, location);
     else
       entry = this.entries[key];
 
@@ -138,7 +145,8 @@ RequestList.prototype = {
     if (isNew)
       this.topList.notifyListeners("add", this.entries[key]);
 
-    if (isNew && ++this._compactCounter >= 20)
+    // Compact the list of entries after 100 additions but at most once every 5 seconds
+    if (isNew && ++this._compactCounter >= 100 && Date.now() - this._lastCompact > 5000)
       this.getAllLocations();
 
     return entry;
@@ -168,9 +176,16 @@ RequestList.prototype = {
 
   getAllLocations: function(results, hadOutdated)
   {
-    this._compactCounter = 0;
-
     let now = Date.now();
+
+    // Accessing wnd.frames will flush outstanding content policy requests in Gecko 1.9.0/1.9.1.
+    // Access it now to make sure we return the correct result even if more nodes are added here.
+    let wnd = getReferencee(this.window);
+    let frames = wnd.frames;
+
+    this._compactCounter = 0;
+    this._lastCompact = now;
+
     if (typeof results == "undefined")
       results = [];
 
@@ -195,11 +210,10 @@ RequestList.prototype = {
       }
     }
 
-    let wnd = getReferencee(this.window);
-    let numFrames = (wnd ? wnd.frames.length : -1);
+    let numFrames = (wnd ? frames.length : -1);
     for (let i = 0; i < numFrames; i++)
     {
-      let frameData = RequestList.getDataForWindow(wnd.frames[i], true);
+      let frameData = RequestList.getDataForWindow(frames[i], true);
       if (frameData && !frameData.detached)
         frameData.getAllLocations(results, hadOutdated);
     }
@@ -244,8 +258,14 @@ RequestList.getDataForNode = function(node, noParent)
 {
   while (node)
   {
-    if (nodeDataProp in node)
-      return [node, node[nodeDataProp]];
+    let entryKey = node.getUserData(nodeDataProp);
+    if (entryKey)
+    {
+      let wnd = getWindow(node);
+      let data = (wnd ? RequestList.getDataForWindow(wnd, true) : null);
+      if (data && entryKey in data.entries)
+        return [node, data.entries[entryKey]];
+    }
 
     if (typeof noParent == "boolean" && noParent)
       return null;
@@ -284,9 +304,11 @@ RequestList.removeListener = function(/**Function*/ listener)
       RequestList._listeners.splice(i--, 1);
 };
 
-function RequestEntry(contentType, docDomain, thirdParty, location)
+function RequestEntry(key, contentType, docDomain, thirdParty, location)
 {
   this._nodes = [];
+  this._indexes = [];
+  this.key = key;
   this.type = contentType;
   this.docDomain = docDomain;
   this.thirdParty = thirdParty;
@@ -300,6 +322,11 @@ RequestEntry.prototype =
    */
   _nodes: null,
   /**
+   * Nodes indexes corresponding with the nodes - used to recognize outdated entries.
+   * @type Array of Integer
+   */
+  _indexes: null,
+  /**
    * Will be set to true if the entry is associated with other nodes besides the
    * ones listed in the nodes property - used if obtaining a weak reference to
    * some nodes isn't possible.
@@ -312,10 +339,20 @@ RequestEntry.prototype =
    */
   _compactCounter: 0,
   /**
+   * Time in milliseconds of the last list cleanup, makes sure cleanup isn't triggered too often.
+   * @type Integer
+   */
+  _lastCompact: 0,
+  /**
    * Time out last node addition or compact operation (used to find outdated entries).
    * @type Integer
    */
   lastUpdate: 0,
+  /**
+   * ID of this entry in document's list
+   * @type String
+   */
+  key: null,
   /**
    * Content type of the request (one of the nsIContentPolicy constants)
    * @type Integer
@@ -348,35 +385,24 @@ RequestEntry.prototype =
   get nodes()
   {
     this._compactCounter = 0;
-    this.lastUpdate = Date.now();
+    this.lastUpdate = this._lastCompact = Date.now();
 
     let result = [];
     for (let i = 0; i < this._nodes.length; i++)
     {
       let node = getReferencee(this._nodes[i]);
-      if (node)
+
+      // Remove node if associated with a different weak reference - this node was added to a different list already
+      if (node && node.getUserData(nodeIndexProp) == this._indexes[i])
         result.push(node);
       else
-        this._nodes.splice(i--, 1);
+      {
+        this._nodes.splice(i, 1);
+        this._indexes.splice(i, 1);
+        i--;
+      }
     }
     return result;
-  },
-  /**
-   * Document elements associated with this entry
-   * @type Iterator of Element
-   */
-  get nodesIterator()
-  {
-    this._compactCounter = 0;
-
-    for (let i = 0; i < this._nodes.length; i++)
-    {
-      let node = getReferencee(this._nodes[i]);
-      if (node)
-        yield node;
-      else
-        this._nodes.splice(i--, 1);
-    }
   },
   /**
    * String representation of the content type, e.g. "subdocument"
@@ -394,25 +420,23 @@ RequestEntry.prototype =
    */
   addNode: function(/**Node*/ node)
   {
-    // If we had this node already - remove it from its old data entry first
-    if (nodeDataProp in node)
-    {
-      let oldEntry = node[nodeDataProp];
-      let index = oldEntry.nodes.indexOf(node);
-      if (index >= 0)
-        oldEntry._nodes.splice(index, 1);
-    }
-
-    if (++this._compactCounter >= 20)   // Compact the list of nodes after 20 additions
+    // Compact the list of nodes after 100 additions but at most once every 5 seconds
+    if (++this._compactCounter >= 100 && Date.now() - this._lastCompact > 5000)
       this.nodes;
     else
       this.lastUpdate = Date.now();
 
-    node[nodeDataProp] = this;
+    node.setUserData(nodeDataProp, this.key, null);
 
     let weakRef = getWeakReference(node);
     if (weakRef)
+    {
       this._nodes.push(weakRef);
+
+      ++nodeIndex;
+      node.setUserData(nodeIndexProp, nodeIndex, null);
+      this._indexes.push(nodeIndex);
+    }
     else
       this.hasAdditionalNodes = true;
   },
@@ -425,6 +449,7 @@ RequestEntry.prototype =
   {
     let result = this.nodes;
     this._nodes = [];
+    this._indexes = [];
     return result;
   }
 };
