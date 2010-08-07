@@ -16,16 +16,15 @@
 <!ENTITY sidebar.title          "Proxyable items on current page">
 
 <!ENTITY settings.label         "Preferences">
-<!ENTITY settings.accesskey     "F">
-<!ENTITY opensidebar.label      "Open proxyable items">
+<!ENTITY settings.accesskey     "P">
+<!ENTITY opensidebar.label      "Proxyable items">
 <!-- Note: This access key should usually be the same as closesidebar.accesskey. It is the same menu item with different label depending on whether the sidebar is currently open.-->
-<!ENTITY opensidebar.accesskey  "B">
+<!ENTITY opensidebar.accesskey  "V">
 <!ENTITY closesidebar.label     "Close proxyable items">
 <!-- Note: This access key should usually be the same as opensidebar.accesskey. It is the same menu item with different label depending on whether the sidebar is currently open.-->
-<!ENTITY closesidebar.accesskey "B">
-<!ENTITY whitelist.site.label   "Disable proxy on --">
+<!ENTITY closesidebar.accesskey "V">
+<!ENTITY whitelist.site.label   "Enable proxy on --">
 
 <!ENTITY objecttab.title        "Proxy">
 <!ENTITY objecttab.tooltip      "Click here to proxy this object with AutoProxy">
-<!ENTITY switchProxy.label      "Switch default proxy">
-<!ENTITY showCurrentProxy.label "Change default proxy to:">
+<!ENTITY switchProxy.label      "Default proxy: ">

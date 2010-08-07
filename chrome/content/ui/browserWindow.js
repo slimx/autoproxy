@@ -38,15 +38,14 @@ let eventHandlers = [
   ["aup-toolbar-popup", "popupshowing", aupFillPopup],
   ["aup-command-settings", "command", function() { aup.openSettingsDialog(); }],
   ["aup-command-sidebar", "command", toggleSidebar],
-  ["aup-command-togglesitewhitelist", "command", function() { toggleFilter(siteWhitelist); }],
-  ["aup-command-toggleshowintoolbar", "command", function() { aupTogglePref("showintoolbar"); }],
-  ["aup-command-toggleshowinstatusbar", "command", function() { aupTogglePref("showinstatusbar"); }],
+  ["aup-command-togglesiterule", "command", function() { toggleFilter(siteRule); }],
+  ["aup-command-contextmenu", "command", function(e) {
+    if (e.eventPhase == e.AT_TARGET) E("aup-status-popup").openPopupAtScreen(window.screen.width/2, window.screen.height/2, false); }],
   ["aup-command-modeauto", "command", function() { proxy.switchToMode('auto'); }],
   ["aup-command-modeglobal", "command", function() { proxy.switchToMode('global'); }],
   ["aup-command-modedisabled", "command", function() { proxy.switchToMode('disabled'); }],
   ["aup-status", "click", aupClickHandler],
-  ["aup-toolbarbutton", "command", function(event) { if (event.eventPhase == event.AT_TARGET) aupCommandHandler(event); }],
-  ["aup-toolbarbutton", "click", function(event) { if (event.button==1) aupClickHandler(event) }]
+  ["aup-toolbarbutton", "click", aupClickHandler]
 ];
 
 /**
@@ -58,7 +57,7 @@ let currentlyShowingInToolbar = prefs.showintoolbar;
  * Filter corresponding with "disable on site" menu item (set in aupFillPopup()).
  * @type Filter
  */
-let siteWhitelist = null;
+let siteRule = null;
 
 /**
  * Progress listener detecting location changes and triggering status updates.
@@ -257,20 +256,20 @@ function aupReloadPrefs() {
   var status = E("aup-status");
   updateElement(status);
   if (prefs.defaultstatusbaraction == 0)
-    status.setAttribute("menupopup", status.getAttribute("context"));
+    status.setAttribute("popup", status.getAttribute("context"));
   else
-    status.removeAttribute("menupopup");
+    status.removeAttribute("popup");
 
   var button = E("aup-toolbarbutton");
   updateElement(button);
   if (button) {
     if (button.hasAttribute("context") && prefs.defaulttoolbaraction == 0)
     {
-      button.setAttribute("menupopup", button.getAttribute("context"));
+      button.setAttribute("popup", button.getAttribute("context"));
       button.removeAttribute("type");
     }
     else
-      button.removeAttribute("menupopup");
+      button.removeAttribute("popup");
   }
 
   updateElement(aupGetPaletteButton());
@@ -465,8 +464,10 @@ function aupFillTooltip(event) {
   var state = event.target.getAttribute("curstate");
   var statusDescr = E("aup-tooltip-status");
   statusDescr.setAttribute("value", aup.getString(state + "_tooltip"));
+
   var proxyDescr = E("aup-tooltip-proxy");
   proxyDescr.setAttribute("value", proxy.nameOfDefaultProxy);
+  proxyDescr.hidden = E("aup-tooltip-proxy-label").hidden = (state == "disabled");
 
   var activeFilters = [];
   E("aup-tooltip-blocked-label").hidden = (state != "auto");
@@ -556,7 +557,8 @@ function getCurrentLocation() /**nsIURI*/
 }
 
 // Fills the context menu on the status bar
-function aupFillPopup(event) {
+function aupFillPopup(event)
+{
   let popup = event.target;
 
   // Not at-target call, ignore
@@ -570,67 +572,92 @@ function aupFillPopup(event) {
     if (list[i].id && /\-(\w+)$/.test(list[i].id))
       elements[RegExp.$1] = list[i];
 
+
+  //
+  // Fill "Preference" & "Sidebar" Menu Items
+  //
   var sidebarOpen = aupIsSidebarOpen();
   elements.opensidebar.hidden = sidebarOpen;
   elements.closesidebar.hidden = !sidebarOpen;
 
-  var whitelistItemSite = elements.whitelistsite;
-  whitelistItemSite.hidden = true;
 
-  var whitelistSeparator = whitelistItemSite.nextSibling;
-  while (whitelistSeparator.nodeType != whitelistSeparator.ELEMENT_NODE)
-    whitelistSeparator = whitelistSeparator.nextSibling;
+  //
+  // Fill "Default Proxy" Menu Items
+  //
+  // remove previously created "default proxy" menuitems
+  var menu = popup.getElementsByTagName('menu')[0];
+  while (menu.firstChild) menu.removeChild(menu.firstChild);
+  while (menu.nextSibling.tagName != 'menuseparator')
+    menu.parentNode.removeChild(menu.nextSibling)
+
+  // more than 4 proxy servers ? display them in a menupopup : inline of main context menu
+  var menuPop = null;
+  if (proxy.validConfigs.length > 3) {
+    menuPop = cE('menupopup');
+    menuPop.id = "options-switchProxy";
+    menu.appendChild(menuPop);
+  }
+  menu.hidden = ! menuPop;
+
+  var menuSeparator = menu.nextSibling;
+  for each (var conf in proxy.validConfigs) {
+    var item = cE('menuitem');
+    item.setAttribute('type', 'radio');
+    item.setAttribute('label', conf.name);
+    item.setAttribute('value', conf.name);
+    item.setAttribute('name', 'radioGroup-switchProxy');
+    item.addEventListener('command', switchDefaultProxy, false);
+    if (proxy.nameOfDefaultProxy == conf.name) item.setAttribute('checked', true);
+    menuPop ? menuPop.appendChild(item) : menu.parentNode.insertBefore(item, menuSeparator);
+  }
+
+
+  //
+  // Fill "Enable Proxy On" Menu Items
+  //
+  var enableProxyOn = elements.enableproxyon;
+  var enableProxySeparator = enableProxyOn.nextSibling;
+
+  // remove previously created extra "Enable Proxy On --" menu items
+  while (enableProxyOn.previousSibling.tagName != 'menuseparator')
+    enableProxyOn.parentNode.removeChild(enableProxyOn.previousSibling);
 
   let location = getCurrentLocation();
-  if (location && proxy.isProxyableScheme(location))
-  {
-    host = location.host.replace(/^www\./, "");
+  if (proxy.isProxyableScheme(location)) {
+    let host = location.host.replace(/^\.+/, '').replace(/\.{2,}/, '.'); // avoid: .www..xxx.com
 
-    if (host)
-    {
-      siteWhitelist = aup.Filter.fromText("@@||" + host + "^$document");
-      whitelistItemSite.setAttribute("checked", siteWhitelist.subscriptions.length && !siteWhitelist.disabled);
-      whitelistItemSite.setAttribute("label", whitelistItemSite.getAttribute("labeltempl").replace(/--/, host));
-      whitelistItemSite.hidden = false;
+    // for host 'www.xxx.com', ignore 'www' unless rule '||www.xxx.com' is active.
+    if (host.indexOf('www.')==0 && !isActive(aup.Filter.fromText('||'+host)))
+      host = host.replace(/^www\./, '');
+
+    siteRule = null;
+    while (true) {
+      var tmpRule = aup.Filter.fromText('||' + host);
+      if (isActive(tmpRule) || !siteRule) {
+        siteRule = tmpRule;
+        var newProxyOn = cE('menuitem');
+        newProxyOn.setAttribute('type', 'checkbox');
+        newProxyOn.setAttribute('checked', isActive(tmpRule));
+        newProxyOn.setAttribute('command', 'aup-command-togglesiterule');
+        newProxyOn.setAttribute('label', enableProxySeparator.previousSibling.getAttribute('labeltempl').replace(/--/, host));
+        enableProxyOn.parentNode.insertBefore(newProxyOn, enableProxyOn);
+        enableProxyOn.setAttribute('command', '');
+        enableProxyOn.setAttribute('disabled', true);
+        enableProxyOn = newProxyOn;
+      }
+      if (host.indexOf('.') <= 0) break;
+      host = host.replace(/^[^\.]+\./, '');
     }
   }
-  whitelistSeparator.hidden = whitelistItemSite.hidden;
+  enableProxySeparator.hidden = enableProxyOn.hidden;
 
-  elements.showintoolbar.setAttribute("checked", prefs.showintoolbar);
-  elements.showinstatusbar.setAttribute("checked", prefs.showinstatusbar);
 
-  var defAction = (popup.tagName == "menupopup" || document.popupNode.id == "aup-toolbarbutton" ? prefs.defaulttoolbaraction : prefs.defaultstatusbaraction);
-  elements.opensidebar.setAttribute("default", defAction == 1);
-  elements.closesidebar.setAttribute("default", defAction == 1);
-  elements.settings.setAttribute("default", defAction == 2);
-
+  //
+  // Fill "Proxy Mode" Menu Items
+  //
   elements.modeauto.setAttribute("checked", "auto" == prefs.proxyMode);
   elements.modeglobal.setAttribute("checked", "global" == prefs.proxyMode);
   elements.modedisabled.setAttribute("checked", "disabled" == prefs.proxyMode);
-
-  var menu = null;
-  if (popup.id == "aup-toolbar-popup")
-    menu = E("aup-toolbar-switchProxy");
-  else if (popup.id == "aup-status-popup")
-    menu = E("aup-status-switchProxy");
-  else return;
-
-  var popup = document.createElement("menupopup");
-  popup.id = "options-switchProxy";
-  if (menu.children.length == 1) menu.removeChild(menu.children[0]);
-  menu.appendChild(popup);
-
-  for each (var p in proxy.getName) {
-    var item = document.createElement('menuitem');
-    item.setAttribute('type', 'radio');
-    item.setAttribute('label', p);
-    item.setAttribute('value', p);
-    item.setAttribute('name', 'radioGroup-switchProxy');
-    item.addEventListener("command", switchDefaultProxy, false);
-    if (proxy.nameOfDefaultProxy == p) item.setAttribute('checked', true);
-    popup.appendChild(item);
-  }
-  popup.insertBefore(document.createElement("menuseparator"), popup.firstChild.nextSibling);
 }
 
 function aupIsSidebarOpen() {
@@ -695,21 +722,16 @@ function toggleFilter(/**Filter*/ filter)
   filterStorage.saveToDisk();
 }
 
-// Handle clicks on the statusbar panel
-function aupClickHandler(e) {
-  if (e.button == 0)
+// Handle clicks on statusbar/toolbar panel
+function aupClickHandler(e)
+{
+  if (e.button == 0 && e.target.tagName == 'image')
     aupExecuteAction(prefs.defaultstatusbaraction, e);
   else if (e.button == 1) {
     prefs.proxyMode = proxy.mode[ (proxy.mode.indexOf(prefs.proxyMode)+1) % 3 ];
     prefs.save();
   }
-}
-
-function aupCommandHandler(e) {
-  if (prefs.defaulttoolbaraction == 0)
-    e.target.open = true;
-  else
-    aupExecuteAction(prefs.defaulttoolbaraction, e);
+  else aupExecuteAction(prefs.defaulttoolbaraction, e);
 }
 
 // Executes default action for statusbar/toolbar by its number
@@ -717,12 +739,12 @@ function aupExecuteAction(action, e)
 {
   switch (action) {
     case 0:
-      aupFillPopup(e);
+      e.target.open = true;
       break;
-    case 1: //proxyable items
+    case 1:
       toggleSidebar();
       break;
-    case 2: //preference
+    case 2:
       aup.openSettingsDialog();
       break;
     case 3: //quick add
@@ -743,10 +765,10 @@ function aupExecuteAction(action, e)
       aup.proxyTipTimer.initWithCallback( {notify:function(){tooltip.hidePopup();}}, 2500, Components.interfaces.nsITimer.TYPE_ONE_SHOT );
       break;
     case 5: //default proxy menu
-      let popup = document.getElementById("aup-popup-switchProxy");
+      let popup = E("aup-popup-switchProxy");
       while (popup.firstChild) popup.removeChild(popup.lastChild);
       for each (let p in proxy.getName) {
-        let item = document.createElement('menuitem');
+        let item = cE('menuitem');
         item.setAttribute('type', 'radio');
         item.setAttribute('label', p);
         item.setAttribute('value', p);
@@ -755,8 +777,8 @@ function aupExecuteAction(action, e)
         if (proxy.nameOfDefaultProxy == p) item.setAttribute('checked', true);
         popup.appendChild(item);
       }
-      popup.insertBefore(document.createElement("menuseparator"), popup.firstChild.nextSibling);
-      if(e.screenX&&e.screenY) popup.openPopupAtScreen(e.screenX, e.screenY, false);
+      popup.insertBefore(cE("menuseparator"), popup.firstChild.nextSibling);
+      if (e.screenX && e.screenY) popup.openPopupAtScreen(e.screenX, e.screenY, false);
       else popup.openPopupAtScreen(e.target.boxObject.screenX, e.target.boxObject.screenY, false);
       break;
     default:
@@ -782,4 +804,9 @@ function switchDefaultProxy(event)
     prefs.defaultProxy = proxy.getName.indexOf(value);
     prefs.save();
   }
+}
+
+function isActive(/**Filter*/ filter)
+{
+  return filter.subscriptions.length && !filter.disabled;
 }
