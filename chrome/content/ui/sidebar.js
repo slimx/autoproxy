@@ -336,23 +336,8 @@ function fillInContext(/**Event*/ e)
   if (!item || ("tooltip" in item && !("filter" in item)))
     return false;
 
-  E("contextDisableFilter").hidden = true;
-  E("contextEnableFilter").hidden = true;
-  if ("filter" in item && item.filter)
-  {
-    let filter = item.filter;
-    let menuItem = E(filter.disabled ? "contextEnableFilter" : "contextDisableFilter");
-    menuItem.filter = filter;
-    menuItem.setAttribute("label", menuItem.getAttribute("labeltempl").replace(/--/, filter.text));
-    menuItem.hidden = false;
-  }
+  enableProxyOn(E('contextOpen'), item);
 
-  E("contextWhitelist").hidden = ("tooltip" in item || !item.filter || item.filter.disabled || item.filter instanceof aup.WhitelistFilter);
-  E("contextBlock").hidden = !E("contextWhitelist").hidden;
-  E("contextBlock").setAttribute("disabled", "filter" in item && item.filter && !item.filter.disabled);
-  E("contextEditFilter").setAttribute("disabled", !("filter" in item && item.filter));
-  E("contextOpen").setAttribute("disabled", "tooltip" in item );
-  E("contextFlash").setAttribute("disabled", "tooltip" in item || !(item.typeDescr in visual) || (item.filter && !item.filter.disabled && !(item.filter instanceof aup.WhitelistFilter)));
   E("contextCopyFilter").setAttribute("disabled", !allItems.some(function(item) {return "filter" in item && item.filter}));
 
   return true;
@@ -389,23 +374,6 @@ function openInTab(item)
     return;
 
   aup.loadInBrowser(item.location, mainWin);
-}
-
-function editFilter() {
-  if (!aup)
-    return;
-
-  var item = treeView.getSelectedItem();
-  if (treeView.data && !treeView.data.length)
-    item = treeView.getDummyTooltip();
-
-  if (!("filter" in item) || !item.filter)
-    return;
-
-  if (!("location") in item)
-    item.location = undefined
-
-  aup.openSettingsDialog(item.location, item.filter);
 }
 
 function enableFilter(filter, enable) {
