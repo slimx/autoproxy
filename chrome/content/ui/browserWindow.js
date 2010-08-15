@@ -44,7 +44,8 @@ let eventHandlers = [
   ["aup-command-modeglobal", "command", function() { proxy.switchToMode('global'); }],
   ["aup-command-modedisabled", "command", function() { proxy.switchToMode('disabled'); }],
   ["aup-status", "click", aupClickHandler],
-  ["aup-toolbarbutton", "click", aupClickHandler]
+  ["aup-toolbarbutton", "command", aupClickHandler],
+  ["aup-toolbarbutton", "click", function(e) { if (e.button == 1) aupClickHandler(e); }]
 ];
 
 /**
@@ -665,13 +666,12 @@ function aupTogglePref(pref) {
 // Handle clicks on statusbar/toolbar panel
 function aupClickHandler(e)
 {
-  if (e.button == 0 && e.target.tagName == 'image')
-    aupExecuteAction(prefs.defaultstatusbaraction, e);
-  else if (e.button == 1) {
+  if (e.button == 1) {
     prefs.proxyMode = proxy.mode[ (proxy.mode.indexOf(prefs.proxyMode)+1) % 3 ];
     prefs.save();
   }
-  else aupExecuteAction(prefs.defaulttoolbaraction, e);
+  else if (e.button != 2) // e.button is undefined when left click tool bar icon
+    aupExecuteAction(e.target.tagName == 'image' ? prefs.defaultstatusbaraction : prefs.defaulttoolbaraction, e);
 }
 
 // Executes default action for statusbar/toolbar by its number
@@ -692,6 +692,7 @@ function aupExecuteAction(action, e)
     case 4: //cycle default proxy
       if (aup.proxyTipTimer) aup.proxyTipTimer.cancel();
       prefs.defaultProxy = ++prefs.defaultProxy % proxy.server.length;
+      if (prefs.defaultProxy == 0) prefs.defaultProxy = 1;
       prefs.save();
       //show tooltip
       let tooltip = E("showCurrentProxy");
@@ -724,17 +725,6 @@ function aupExecuteAction(action, e)
     default:
       break;
   }
-}
-
-// Retrieves the image URL for the specified style property
-function aupImageStyle(computedStyle, property) {
-  var value = computedStyle.getPropertyCSSValue(property);
-  if (value instanceof Ci.nsIDOMCSSValueList && value.length >= 1)
-    value = value[0];
-  if (value instanceof Ci.nsIDOMCSSPrimitiveValue && value.primitiveType == Ci.nsIDOMCSSPrimitiveValue.CSS_URI)
-    return aup.unwrapURL(value.getStringValue()).spec;
-
-  return null;
 }
 
 function switchDefaultProxy(event)
