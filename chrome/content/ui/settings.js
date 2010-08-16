@@ -419,6 +419,51 @@ function saveDefaultDir(dir)
 }
 
 /**
+ * Adds a set of filters to the list.
+ * @param {Array of String} filters
+ * @return {Filter} last filter added (or null)
+ */
+function addFilters(filters)
+{
+  let commentQueue = [];
+  let lastAdded = null;
+  for each (let text in filters)
+  {
+    // Don't add checksum comments
+    if (/!\s*checksum[\s\-:]+([\w\+\/]+)/i.test(text))
+      continue;
+
+    text = aup.normalizeFilter(text);
+    if (!text)
+      continue;
+
+    let filter = getFilterByText(text);
+    if (filter instanceof aup.CommentFilter)
+      commentQueue.push(filter);
+    else
+    {
+      lastAdded = filter;
+      let subscription = treeView.addFilter(filter, null, null, true);
+      if (subscription && commentQueue.length)
+      {
+        // Insert comments before the filter that follows them
+        for each (let comment in commentQueue)
+          treeView.addFilter(comment, subscription, filter, true);
+        commentQueue.splice(0, commentQueue.length);
+      }
+    }
+  }
+
+  for each (let comment in commentQueue)
+  {
+    lastAdded = comment;
+    treeView.addFilter(comment, null, null, true);
+  }
+
+  return lastAdded;
+}
+
+/**
  * Lets the user choose a file and reads user-defined filters from this file.
  */
 function importList()
@@ -470,38 +515,8 @@ function importList()
       if (result == 0)
         treeView.removeUserFilters();
 
-      let commentQueue = [];
-
       lines.shift();
-      for each (let line in lines)
-      {
-        // Don't import checksum comments
-        if (/!\s*checksum[\s\-:]+([\w\+\/]+)/i.test(line))
-          continue;
-
-        line = aup.normalizeFilter(line);
-        if (!line)
-          continue;
-
-        let filter = getFilterByText(line);
-        if (filter instanceof aup.CommentFilter)
-          commentQueue.push(filter);
-        else
-        {
-          let subscription = treeView.addFilter(filter, null, null, true);
-          if (subscription && commentQueue.length)
-          {
-            // Insert comments before the filter that follows them
-            for each (let comment in commentQueue)
-              treeView.addFilter(comment, subscription, filter, true);
-            commentQueue.splice(0, commentQueue.length);
-          }
-        }
-      }
-
-      for each (let comment in commentQueue)
-        treeView.addFilter(comment, null, null, true);
-
+      addFilters(lines);
       treeView.ensureSelection(0);
     }
     else 
@@ -548,7 +563,7 @@ function exportList()
 
           // Find version requirements of this filter
           let filterVersion;
-          if (/^(?:@@)?\|\|/.test(filter.text) || /\^/.test(filter.text))
+          if (/^(?:@@)?\|\|/.test(filter.text) || (!aup.Filter.regexpRegExp.test(filter.text) && /\^/.test(filter.text)))
             filterVersion = "0.3.0";
           else
             filterVersion = "0.1.0";
@@ -683,7 +698,7 @@ function onListDragGesture(/**Event*/ e)
  * Filter observer
  * @see filterStorage.addFilterObserver()
  */
-function onFilterChange(/**String*/ action, /**Array of Filter*/ filters)
+function onFilterChange(/**String*/ action, /**Array of Filter*/ filters, additionalData)
 {
   switch (action)
   {
@@ -693,7 +708,10 @@ function onFilterChange(/**String*/ action, /**Array of Filter*/ filters)
       // an update batch makes sure that everything is invalidated.
       treeView.boxObject.beginUpdateBatch();
       for each (let filter in filters)
-        treeView.addFilter(getFilterByText(filter.text), null, null, true);
+      {
+        let insertBefore = (additionalData ? getFilterByText(additionalData.text) : null);
+        treeView.addFilter(getFilterByText(filter.text), null, insertBefore, true);
+      }
       treeView.boxObject.endUpdateBatch();
       return;
     case "remove":
@@ -762,6 +780,16 @@ function onSubscriptionChange(/**String*/ action, /**Array of Subscription*/ sub
         treeView.invalidateSubscription(subscription);
         break;
       case "update":
+        if ("oldSubscription" in subscription)
+        {
+          treeView.removeSubscription(getSubscriptionByURL(subscription.oldSubscription.url));
+          delete subscriptionWrappers[subscription.oldSubscription.url];
+          if (treeView.subscriptions.indexOf(subscription) < 0)
+          {
+            treeView.addSubscription(subscription, true);
+            break;
+          }
+        }
         let oldCount = treeView.getSubscriptionRowCount(subscription);
 
         delete subscription.filters;
@@ -774,6 +802,16 @@ function onSubscriptionChange(/**String*/ action, /**Array of Subscription*/ sub
         treeView.invalidateSubscription(subscription, oldCount);
         break;
       case "updateinfo":
+        if ("oldSubscription" in subscription)
+        {
+          treeView.removeSubscription(getSubscriptionByURL(subscription.oldSubscription.url));
+          delete subscriptionWrappers[subscription.oldSubscription.url];
+          if (treeView.subscriptions.indexOf(subscription) < 0)
+          {
+            treeView.addSubscription(subscription, true);
+            break;
+          }
+        }
         treeView.invalidateSubscriptionInfo(subscription);
         break;
     }
@@ -967,14 +1005,9 @@ function pasteFromClipboard() {
     return;
   }
 
-  for each (let line in data.split(/[\r\n]+/))
-  {
-    line = aup.normalizeFilter(line);
-    if (!line)
-      continue;
-
-    treeView.addFilter(getFilterByText(line));
-  }
+  let lastAdded = addFilters(data.split(/[\r\n]+/));
+  if (lastAdded)
+    treeView.selectFilter(lastAdded);
 }
 
 /**
@@ -1016,7 +1049,6 @@ function fillViewPopup(/**String*/prefix)
 {
   E(prefix + "view-filter").setAttribute("checked", !E("col-filter").hidden);
   E(prefix + "view-slow").setAttribute("checked", !E("col-slow").hidden);
-  E(prefix + "view-special").setAttribute("checked", !E("col-specialProxy").hidden);
   E(prefix + "view-enabled").setAttribute("checked", !E("col-enabled").hidden);
   E(prefix + "view-hitcount").setAttribute("checked", !E("col-hitcount").hidden);
   E(prefix + "view-lasthit").setAttribute("checked", !E("col-lasthit").hidden);
@@ -1167,21 +1199,6 @@ function fillContext()
     E("context-disable").setAttribute("disabled", "true");
   }
 
-    var displayProxyMenu = false;
-    var filters = treeView.getSelectedFilters();
-    if(filters.length<selected.length)displayProxyMenu = true;
-    else{
-    for each(var i in filters)
-    {
-        if(i instanceof aup.WhitelistFilter)
-        {
-            displayProxyMenu = true;
-            break;
-        }
-    }}
-
-    E("context-selectProxy").hidden = displayProxyMenu;
-    E("context-selectProxy").previousSibling.hidden = displayProxyMenu;
   return true;
 }
 
@@ -1270,7 +1287,8 @@ function compareText(/**Filter*/ filter1, /**Filter*/ filter2)
 }
 
 /**
- * Sort function for the filter list, compares two filters by "slow" marker.
+ * Sort function for the filter list, compares two filters by "slow"
+ * marker.
  */
 function compareSlow(/**Filter*/ filter1, /**Filter*/ filter2)
 {
@@ -1366,7 +1384,8 @@ let treeView = {
   //
 
   QueryInterface: function(uuid) {
-    if ( !uuid.equals(Ci.nsISupports) && !uuid.equals(Ci.nsITreeView))
+    if (!uuid.equals(Ci.nsISupports) &&
+        !uuid.equals(Ci.nsITreeView))
     {
       throw Cr.NS_ERROR_NO_INTERFACE;
     }
@@ -1455,7 +1474,7 @@ let treeView = {
     col = col.id;
 
     // Only three columns have text
-		if (col != "col-filter" && col != "col-slow" && col != "col-hitcount" && col != "col-lasthit" && col != "col-specialProxy")
+    if (col != "col-filter" && col != "col-slow" && col != "col-hitcount" && col != "col-lasthit")
       return null;
 
     // Don't show text in the edited row
@@ -1474,8 +1493,6 @@ let treeView = {
         return (filter instanceof aup.RegExpFilter && !filter.shortcut && !filter.disabled && !subscription.disabled ? "!" : null);
       else if (filter instanceof aup.ActiveFilter)
       {
-        if(col=="col-specialProxy")
-            return filter.proxy;
         if (col == "col-hitcount")
           return filter.hitCount;
         else
@@ -1683,6 +1700,8 @@ let treeView = {
       let newIndex = (subscription.filters == subscription._sortedFilters || newSortedIndex >= subscription._sortedFilters.length ? newSortedIndex : subscription.filters.indexOf(subscription._sortedFilters[newSortedIndex]));
       if (oldIndex < 0 || newIndex < 0)
         return;
+      if (oldSubscription == subscription && (newIndex == oldIndex || newIndex == oldIndex + 1))
+        return;
 
       {
         if (!oldSubscription.hasOwnProperty("filters"))
@@ -1748,6 +1767,8 @@ let treeView = {
 
       treeView.selectRow(newRow);
     }
+
+    onChange();
   },
 
   getCellValue: function() {return null},
@@ -2680,6 +2701,8 @@ let treeView = {
       subscriptions.push(subscription.__proto__);
     }
 
+    filterWrappers = {__proto__: null};
+
     for each (let subscription in filterStorage.subscriptions.slice())
       if (!(subscription.url in newSubscriptions))
         filterStorage.removeSubscription(subscription);
@@ -3014,81 +3037,24 @@ let treeView = {
   }
 };
 
-function fillProxyMenu()
+
+
+function changeClickBehaver(action, isToobar)
 {
-    var group = E("selectProxy-popup");
-    var length = group.children.length;
-    for(var i=0;i<length-2;i++)
-    {
-        group.removeChild(group.lastChild);
-    }
-    var defaultProxy = E("useDefaultProxy").setAttribute("checked",true);
+  if (!isToobar) {
+    if (prefs.defaultstatusbaraction == action) return;
+    prefs.defaultstatusbaraction = action;
+  }
+  else {
+    if (prefs.defaulttoolbaraction == action) return;
+    prefs.defaulttoolbaraction = action;
+  }
 
-    let filters = treeView.getSelectedFilters(true);
-    if(!filters||!filters[0])return;
- Components.classes["@mozilla.org/consoleservice;1"].getService(Ci.nsIConsoleService).logStringMessage("222");
-
-    for(var p in aup.proxyMap)
-    {
-        var item=document.createElement("menuitem");
-        item.setAttribute("type","radio");
-        item.setAttribute("label",p);
-        item.setAttribute("value",p);
-        item.setAttribute("name","selectProxy-rg");
-        item.setAttribute("oncommand","changeFilterProxy(event)");
-        
-        if(filters[0].proxy==p)
-        item.setAttribute("checked",true);
-        group.appendChild(item);
-    }
-    
-
+  prefs.save();
 }
 
-function changeFilterProxy(event)
+function fillClickBehaviourPopup(e, isToolbar)
 {
-    let filters = treeView.getSelectedFilters(false);
-
-    if (!filters || !filters[0])return;
-    else
-    {
-
-        for each(var f in filters)
-        {
-            if(event.target.value==f.proxy||f instanceof aup.WhitelistFilter)continue;
-            else
-            {
-                if(event.target.value==""){
-                    delete f.proxy;
-                }
-                else
-                {
-                 f.proxy = event.target.value;
-                }
-            }
-
-        }
-
-    }
-
-}
-
-function changeClickBehaver(action,isToobar)
-{
-    if (!isToobar) {
-        if (prefs.defaultstatusbaraction == action)return;
-        prefs.defaultstatusbaraction = action;
-    }
-    else {
-        if (prefs.defaulttoolbaraction == action)return;
-        prefs.defaulttoolbaraction = action;
-    }
-    prefs.save();
-}
-
-function fillClickBehaviourPopup(e,isToolbar)
-{
-    var value = isToolbar?prefs.defaulttoolbaraction:prefs.defaultstatusbaraction;
-    e.target.children[value].setAttribute("checked",true);
-
+  var value = isToolbar ? prefs.defaulttoolbaraction : prefs.defaultstatusbaraction;
+  e.target.children[value].setAttribute("checked", true);
 }

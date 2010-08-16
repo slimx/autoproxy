@@ -15,14 +15,14 @@
  *
  * The Initial Developer of the Original Code is
  * Wladimir Palant.
- * Portions created by the Initial Developer are Copyright (C) 2006-2008
+ * Portions created by the Initial Developer are Copyright (C) 2006-2009
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
  *
  * ***** END LICENSE BLOCK ***** */
 
-var DataContainer = aup.DataContainer;
+var RequestList = aup.RequestList;
 
 // Main browser window
 var mainWin = parent;
@@ -37,9 +37,22 @@ var noFlash = false;
 var disabledBlacklistMatcher = new aup.Matcher();
 var disabledWhitelistMatcher = new aup.Matcher();
 
+var aupHooks = null;
+
 function init() {
   var list = E("list");
   list.view = treeView;
+
+  // Restore previous state
+  var params = aup.getParams();
+  if (params && params.search) {
+    E("searchField").value = params.search;
+    treeView.setFilter(params.search);
+  }
+  if (params && params.focus && E(params.focus))
+    E(params.focus).focus();
+  else
+    E("searchField").focus();
 
   var selected = null;
   if (/sidebarDetached\.xul$/.test(parent.location.href)) {
@@ -53,34 +66,39 @@ function init() {
       var sidebarKey = mainWin.document.getElementById("aup-key-sidebar").cloneNode(true);
       parent.document.getElementById("detached-keyset").appendChild(parent.document.importNode(sidebarKey, true));
     }
+
+    // Set default size/position unless already persisted
+    let defaults = {screenX: 0, screenY: 0, width: 600, height: 300};
+    if (params && params.position)
+      defaults = params.position;
+
+    let wnd = parent.document.documentElement;
+    for (let attr in defaults)
+      if (!wnd.hasAttribute(attr))
+        wnd.setAttribute(attr, defaults[attr]);
   }
-  window.__defineGetter__("content", function() {return aup.getBrowserInWindow(mainWin).contentWindow;});
+
+  aupHooks = mainWin.document.getElementById("aup-hooks");
+  window.__defineGetter__("content", function() {return aupHooks.getBrowser().contentWindow;});
 
   // Install item listener
-  DataContainer.addListener(handleItemChange);
+  RequestList.addListener(handleItemChange);
 
   // Initialize matchers for disabled filters
   reloadDisabledFilters();
   filterStorage.addFilterObserver(reloadDisabledFilters);
   filterStorage.addSubscriptionObserver(reloadDisabledFilters);
 
-  // Restore previous state
-  var params = aup.getParams();
-  if (params && params.search) {
-    E("searchField").value = params.search;
-    treeView.setFilter(params.search);
-  }
-  if (params && params.focus && E(params.focus))
-    E(params.focus).focus();
-  else
-    E("searchField").focus();
-
   // Activate flasher
   list.addEventListener("select", onSelectionChange, false);
 
   // Retrieve data for the window
-  wndData = DataContainer.getDataForWindow(window.content);
-  treeView.setData(wndData.getAllLocations());
+  wndData = RequestList.getDataForWindow(window.content);
+  var locations=[];
+  var rootCurrentData = RequestList.getDataForWindow(mainWin)
+          .getLocation(6, aupHooks.getBrowser().currentURI.spec);
+  if(rootCurrentData) locations.push(rootCurrentData);
+  treeView.setData(wndData.getAllLocations(locations));
   if (wndData.lastSelection) {
     noFlash = true;
     treeView.selectItem(wndData.lastSelection);
@@ -88,7 +106,7 @@ function init() {
   }
 
   // Install a handler for tab changes
-  aup.getBrowserInWindow(mainWin).addEventListener("select", handleTabChange, false);
+  aupHooks.getBrowser().addEventListener("select", handleTabChange, false);
 }
 
 // To be called for a detached window when the main window has been closed
@@ -102,11 +120,11 @@ function cleanUp() {
     return;
 
   flasher.stop();
-  DataContainer.removeListener(handleItemChange);
+  RequestList.removeListener(handleItemChange);
   filterStorage.removeFilterObserver(reloadDisabledFilters);
   filterStorage.removeSubscriptionObserver(reloadDisabledFilters);
 
-  aup.getBrowserInWindow(mainWin).removeEventListener("select", handleTabChange, false);
+  aupHooks.getBrowser().removeEventListener("select", handleTabChange, false);
   mainWin.removeEventListener("unload", mainUnload, false);
 }
 
@@ -167,7 +185,11 @@ function handleItemChange(wnd, type, data, item) {
   else if (type == "select" || type == "refresh") {
     // We moved to a different document, reload list
     wndData = data;
-    treeView.setData(wndData.getAllLocations());
+    var locations=[];
+    var rootCurrentData = RequestList.getDataForWindow(mainWin)
+            .getLocation(6, aupHooks.getBrowser().currentURI.spec);
+    if(rootCurrentData) locations.push(rootCurrentData);
+    treeView.setData(wndData.getAllLocations(locations));
   }
   else if (type == "invalidate")
     treeView.boxObject.invalidate();
@@ -176,8 +198,12 @@ function handleItemChange(wnd, type, data, item) {
 }
 
 function handleTabChange() {
-  wndData = DataContainer.getDataForWindow(window.content);
-  treeView.setData(wndData.getAllLocations());
+  wndData = RequestList.getDataForWindow(window.content);
+  var locations=[];
+  var rootCurrentData = RequestList.getDataForWindow(mainWin)
+          .getLocation(6, aupHooks.getBrowser().currentURI.spec);
+  if(rootCurrentData) locations.push(rootCurrentData);
+  treeView.setData(wndData.getAllLocations(locations));
   if (wndData.lastSelection) {
     noFlash = true;
     treeView.selectItem(wndData.lastSelection);
@@ -257,7 +283,6 @@ function fillInTooltip(e) {
 
   var showPreview = prefs.previewimages && !("tooltip" in item);
   showPreview = showPreview && (item.typeDescr == "IMAGE" || item.typeDescr == "BACKGROUND");
-//  showPreview = showPreview && (!item.filter || item.filter instanceof aup.WhitelistFilter);
   if (showPreview) {
     // Check whether image is in cache (stolen from ImgLikeOpera)
     if (!cacheSession) {
@@ -291,9 +316,12 @@ const visual = {
   SUBDOCUMENT: true
 }
 
-// Fill in tooltip data before showing it
-function fillInContext(e) {
-  var item, allItems;
+/**
+ * Updates context menu before it is shown.
+ */
+function fillInContext(/**Event*/ e)
+{
+  let item, allItems;
   if (treeView.data && !treeView.data.length)
   {
     item = treeView.getDummyTooltip();
@@ -308,23 +336,8 @@ function fillInContext(e) {
   if (!item || ("tooltip" in item && !("filter" in item)))
     return false;
 
-  E("contextDisableFilter").hidden = true;
-  E("contextEnableFilter").hidden = true;
-  if ("filter" in item && item.filter)
-  {
-    let filter = item.filter;
-    let menuItem = E(item.filter.disabled ? "contextEnableFilter" : "contextDisableFilter");
-    menuItem.filter = filter;
-    menuItem.setAttribute("label", menuItem.getAttribute("labeltempl").replace(/--/, filter.text));
-    menuItem.hidden = false;
-  }
+  enableProxyOn(E('contextOpen'), item);
 
-  E("contextWhitelist").hidden = ("tooltip" in item || !item.filter || item.filter.disabled || item.filter instanceof aup.WhitelistFilter);
-  E("contextBlock").hidden = !E("contextWhitelist").hidden;
-  E("contextBlock").setAttribute("disabled", "filter" in item && item.filter && !item.filter.disabled);
-  E("contextEditFilter").setAttribute("disabled", !("filter" in item && item.filter));
-  E("contextOpen").setAttribute("disabled", "tooltip" in item );
-  E("contextFlash").setAttribute("disabled", "tooltip" in item || !(item.typeDescr in visual) || (item.filter && !item.filter.disabled && !(item.filter instanceof aup.WhitelistFilter)));
   E("contextCopyFilter").setAttribute("disabled", !allItems.some(function(item) {return "filter" in item && item.filter}));
 
   return true;
@@ -351,18 +364,6 @@ function handleClick(event)
 }
 
 /**
- * Processes double-clicks on the item list.
- * @param {Event} event
- */
-function handleDblClick(event)
-{
-  if (event.button != 0 || treeView.getColumnAt(event.clientX, event.clientY) == "state")
-    return;
-
-  doBlock();
-}
-
-/**
  * Opens the item in a new tab.
  */
 function openInTab(item)
@@ -373,41 +374,6 @@ function openInTab(item)
     return;
 
   aup.loadInBrowser(item.location, mainWin);
-}
-
-function doBlock() {
-  if (!aup)
-    return;
-
-  var item = treeView.getSelectedItem();
-  if (!item)
-    return;
-
-  var filter = null;
-  if ("filter" in item && item.filter && !item.filter.disabled)
-    filter = item.filter;
-
-  if (filter && filter instanceof aup.WhitelistFilter)
-    return;
-
-  openDialog("chrome://autoproxy/content/ui/composer.xul", "_blank", "chrome,centerscreen,resizable,dialog=no,dependent", window.content, item);
-}
-
-function editFilter() {
-  if (!aup)
-    return;
-
-  var item = treeView.getSelectedItem();
-  if (treeView.data && !treeView.data.length)
-    item = treeView.getDummyTooltip();
-
-  if (!("filter" in item) || !item.filter)
-    return;
-
-  if (!("location") in item)
-    item.location = undefined
-
-  aup.openSettingsDialog(item.location, item.filter);
 }
 
 function enableFilter(filter, enable) {
@@ -461,48 +427,43 @@ function saveState() {
   while (focused && (!focused.id || !("focus" in focused)))
     focused = focused.parentNode;
 
+  // Calculate default position for the detached window
+  var boxObject = document.documentElement.boxObject;
+  var position = {screenX: boxObject.screenX, screenY: boxObject.screenY, width: boxObject.width, height: boxObject.height};
+
   var params = {
     filter: treeView.filter,
-    focus: (focused ? focused.id : null)
+    focus: (focused ? focused.id : null),
+    position: position
   };
   aup.setParams(params);
 }
 
-// detaches the sidebar
-function detach() {
-  if (!aup)
-    return;
-
-  saveState();
-
-  // Calculate default position for the detached window
-  var boxObject = document.documentElement.boxObject;
-  var position = ",left="+boxObject.screenX+",top="+boxObject.screenY+",outerWidth="+boxObject.width+",outerHeight="+boxObject.height;
-
-  // Close sidebar and open detached window
+// closes the sidebar
+function doClose()
+{
   mainWin.document.getElementById("aup-command-sidebar").doCommand();
-  mainWin.aupDetachedSidebar = mainWin.openDialog("chrome://autoproxy/content/ui/sidebarDetached.xul", "_blank", "chrome,resizable,dependent,dialog=no"+position);
-
-  // Save setting
-  prefs.detachsidebar = true;
-  prefs.save();
 }
 
-// reattaches the sidebar
-function reattach() {
+// detaches/reattaches the sidebar
+function detach(doDetach)
+{
   if (!aup)
     return;
 
   saveState();
 
-  // Save setting
-  prefs.detachsidebar = false;
-  prefs.save();
+  // Store variables locally, global variables will go away when we are closed
+  let myPrefs = prefs;
+  let myMainWin = mainWin;
 
-  // Open sidebar in window
-  mainWin.aupDetachedSidebar = null;
-  mainWin.document.getElementById("aup-command-sidebar").doCommand();
-  parent.close();
+  // Close sidebar and open detached window
+  myMainWin.document.getElementById("aup-command-sidebar").doCommand();
+  myPrefs.detachsidebar = doDetach;
+  myMainWin.document.getElementById("aup-command-sidebar").doCommand();
+
+  // Save setting
+  myPrefs.save();
 }
 
 // Returns items size in the document if available
@@ -601,7 +562,8 @@ var treeView = {
   //
 
   QueryInterface: function(uuid) {
-    if ( !uuid.equals(Ci.nsISupports) && !uuid.equals(Ci.nsITreeView))
+    if (!uuid.equals(Ci.nsISupports) &&
+        !uuid.equals(Ci.nsITreeView))
     {
       throw Cr.NS_ERROR_NO_INTERFACE;
     }

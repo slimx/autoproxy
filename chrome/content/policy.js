@@ -19,12 +19,12 @@
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
- * 2009: Wang Congming <lovelywcm@gmail.com> Modified for AutoProxy.
+ * 2009-2010: Wang Congming <lovelywcm@gmail.com> Modified for AutoProxy.
  *
  * ***** END LICENSE BLOCK ***** */
 
 /**
- * Content policy implementation, responsible for proxying things.
+ * Content policy implementation.
  * This file is included from AutoProxy.js.
  */
 
@@ -52,18 +52,6 @@ var policy =
    */
   localizedDescr: null,
 
-  /**
-   * Map containing all schemes that can be proxyed.
-   * @type Object
-   */
-  proxyableSchemes: null,
-
-  /**
-   * nsIProxyInfo
-   */
-  defaultProxy: null,
-  fallBackProxy: null,
-
   shouldProxy: function(){},
 
   /**
@@ -76,10 +64,8 @@ var policy =
   ContentType: "",  // String
   ContentURI: null, // nsIURI
 
-  init: function()
-  {
-    var types = ["OTHER", "SCRIPT", "IMAGE", "STYLESHEET", "OBJECT", "SUBDOCUMENT",
-      "DOCUMENT", "XBL", "PING", "XMLHTTPREQUEST", "OBJECT_SUBREQUEST", "DTD", "FONT", "MEDIA"];
+  init: function() {
+    var types = ["OTHER", "SCRIPT", "IMAGE", "STYLESHEET", "OBJECT", "SUBDOCUMENT", "DOCUMENT", "XBL", "PING", "XMLHTTPREQUEST", "OBJECT_SUBREQUEST", "DTD", "FONT", "MEDIA"];
 
     // type constant by type description and type description by type constant
     this.type = {};
@@ -99,33 +85,6 @@ var policy =
     this.type.BACKGROUND = 0xFFFE;
     this.typeDescr[0xFFFE] = "BACKGROUND";
     this.localizedDescr[0xFFFE] = aup.getString("type_label_background");
-
-    // Proxyable URL schemes
-    this.proxyableSchemes = {};
-    for each (var scheme in prefs.proxyableSchemes.toLowerCase().split(" "))
-      this.proxyableSchemes[scheme] = true;
-  },
-
-  //
-  // nsIProtocolProxyFilter implementation
-  //
-  applyFilter: function(pS, uri, proxy)
-  {
-    if (uri.schemeIs("feed")) return pS.newProxyInfo("direct", "", -1, 0, 0, null);
-        var match = this.shouldProxy(uri);
-        if(match)
-        {
-            if(match instanceof WhitelistFilter){
-                return pS.newProxyInfo("direct", "", -1, 0, 0, null);
-            }
-            if(match.proxy&&match.proxy!="")
-            {
-            var proxyInfo = aup.proxyMap[match.proxy];
-            return proxyInfo?proxyInfo:this.defaultProxy;
-            }
-            else return this.defaultProxy;
-        }
-	    return this.fallBackProxy;
   },
 
   /**
@@ -137,7 +96,7 @@ var policy =
     var match = null, docDomain = "extension", thirdParty = false, contentType = 3;
     var wnd, node, locationText = location.spec;
 
-    if ( location == this.ContentURI ) {
+    if (location == this.ContentURI) {
       wnd = this.Wnd; node = this.Node; contentType = this.ContentType;
 
       // Data loaded by plugins should be attached to the document
@@ -149,8 +108,7 @@ var policy =
         contentType = this.type.BACKGROUND;
 
       // Fix type for objects misrepresented as frames or images
-      if (contentType != this.type.OBJECT && (node instanceof Ci.nsIDOMHTMLObjectElement ||
-                                              node instanceof Ci.nsIDOMHTMLEmbedElement ))
+      if (contentType != this.type.OBJECT && (node instanceof Ci.nsIDOMHTMLObjectElement || node instanceof Ci.nsIDOMHTMLEmbedElement))
         contentType = this.type.OBJECT;
 
       docDomain = this.getHostname(wnd.location.href);
@@ -166,25 +124,15 @@ var policy =
     //   * no sidebar window can be used to display extension's http request;
     //   * shouldLoad() doesn't check extension's request, any way to do this?
     //     * just like onChannelRedirect() did for 301/302 redirection.
-    if ( location == this.ContentURI ) {
-      var data = DataContainer.getDataForWindow(wnd);
-      data.addNode(wnd.top, node, contentType, docDomain, thirdParty, locationText, match);
+    if (location == this.ContentURI) {
+      var data = RequestList.getDataForWindow(wnd);
+      data.addNode(node, contentType, docDomain, thirdParty, locationText, match);
     }
 
-    if (match)
+    if (match && arguments.length == 1)
       filterStorage.increaseHitCount(match);
 
-    //return match && !(match instanceof WhitelistFilter);
-    return match?match:false;
-  },
-
-  /**
-   * Checks whether the location's scheme is proxyable.
-   * @param location  {nsIURI}
-   * @return {Boolean}
-   */
-  isProxyableScheme: function(location) {
-    return location.scheme in this.proxyableSchemes;
+    return match && !(match instanceof WhitelistFilter);
   },
 
   /**
@@ -215,8 +163,13 @@ var policy =
     }
     catch (e)
     {
-      // EffectiveTLDService throws on IP addresses
-      return location.host != docDomain;
+      // EffectiveTLDService throws on IP addresses, just compare the host name
+      let host = "";
+      try
+      {
+        host = location.host;
+      } catch (e) {}
+      return host != docDomain;
     }
   },
 
@@ -229,20 +182,23 @@ var policy =
   //
   // nsIContentPolicy interface implementation
   //
-  shouldLoad: function(contentType, location, requestOrigin, node, mimeTypeGuess, extra) {
-    if ( this.isProxyableScheme(location) ) {
+  shouldLoad: function(contentType, contentLocation, requestOrigin, node, mimeTypeGuess, extra)
+  {
+    if (proxy.isProxyableScheme(contentLocation)) {
       // Interpret unknown types as "other"
-      if ( !(contentType in this.typeDescr) ) contentType = this.type.OTHER;
+      if (!(contentType in this.typeDescr))
+        contentType = this.type.OTHER;
 
       this.Wnd = getWindow(node);
       this.Node = node;
       this.ContentType = contentType;
-      this.ContentURI = unwrapURL(location);
+      this.ContentURI = unwrapURL(contentLocation);
     }
     return ok;
   },
 
-  shouldProcess: function(contentType, contentLocation, requestOrigin, insecNode, mimeType, extra) {
+  shouldProcess: function(contentType, contentLocation, requestOrigin, insecNode, mimeType, extra)
+  {
     return ok;
   },
 
@@ -258,24 +214,33 @@ var policy =
         contexts.pop();
       else if (contexts[0] && contexts[0].parent != contexts[0])
         contexts.push(contexts[0].parent);
+      else if (contexts[0] && contexts[0].parent == contexts[0])
+      {
+        contexts.push(Cc["@mozilla.org/appshell/window-mediator;1"]
+                .getService(Ci.nsIWindowMediator)
+                .getMostRecentWindow("navigator:browser"));
+        contexts.shift();
+      }
 
       let info = null;
       for each (let context in contexts)
       {
         // Did we record the original request in its own window?
-        let data = DataContainer.getDataForWindow(context, true);
+        let data = RequestList.getDataForWindow(context, true);
         if (data)
           info = data.getURLInfo(oldChannel.originalURI.spec);
 
         if (info)
         {
-          let node = (info.nodes.length ? info.nodes[info.nodes.length - 1] : context.document);
+          let nodes = info.nodes;
+          let node = (nodes.length > 0 ? nodes[nodes.length - 1] : context.document);
 
           this.Wnd = context;
           this.Node = node;
           this.ContentType = info.type;
           this.ContentURI = newChannel.URI;
 
+          this.autoMatching(newChannel.URI, true);
           return;
         }
       }
@@ -283,45 +248,14 @@ var policy =
     catch (e if (e != Cr.NS_BASE_STREAM_WOULD_BLOCK))
     {
       // We shouldn't throw exceptions here - this will prevent the redirect.
-      dump("\nAutoProxy: Unexpected error in policy.onChannelRedirect: " + e + "\n");
+      dump("AutoProxy: Unexpected error in policy.onChannelRedirect: " + e + "\n");
     }
   },
 
-
-
-/*
-  below 2 functions can be removed after removing of composer
-*/
-
-  // Reapplies filters to all nodes of the window
-  refilterWindowInternal: function(wnd, start) {
-    if (wnd.closed)
-      return;
-
-    var wndData = aup.getDataForWindow(wnd);
-    var data = wndData.getAllLocations();
-    for (var i = start; i < data.length; i++) {
-      if (i - start >= 20) {
-        // Allow events to process
-        createTimer(function() {policy.refilterWindowInternal(wnd, i);}, 0);
-        return;
-      }
-
-      if (!data[i].filter || data[i].filter instanceof WhitelistFilter) {
-        var nodes = data[i].nodes;
-        data[i].nodes = [];
-        for (var j = 0; j < nodes.length; j++) {
-          //this.shouldProxy(wnd, nodes[j], data[i].type, makeURL(data[i].location));
-        }
-      }
-    }
-
-    aup.DataContainer.notifyListeners(wnd, "invalidate", data);
-  },
-
-  // Calls refilterWindowInternal delayed to allow events to process
-  refilterWindow: function(wnd) {
-    createTimer(function() {policy.refilterWindowInternal(wnd, 0);}, 0);
+  asyncOnChannelRedirect: function(oldChannel, newChannel, flags, cb)
+  {
+    this.onChannelRedirect(oldChannel, newChannel, flags);
+    cb.onRedirectVerifyCallback(0);
   }
 };
 

@@ -17,7 +17,7 @@
    -
    - The Initial Developer of the Original Code is
    - Wladimir Palant.
-   - Portions created by the Initial Developer are Copyright (C) 2006-2008
+   - Portions created by the Initial Developer are Copyright (C) 2006-2009
    - the Initial Developer. All Rights Reserved.
    -
    - Contributor(s):
@@ -32,6 +32,10 @@
     <popupset id="aup-popupset"/>
     <keyset id="aup-keyset"/>
     <commandset id="aup-commandset"/>
+    <box id="aup-hooks" getBrowser="return window.messageContent;"
+      addTab="let tabmail = E('tabmail');return (tabmail ? tabmail.openTab('contentTab', {contentPage: arguments[0]}) : false);"
+      getToolbox="return E('mail-toolbox')"
+      getDefaultToolbar="return E('mail-bar2') || E('msgToolbar');" toolbarInsertBefore="return E('button-junk');"/>
   </window>
 
   <!-- Status bar -->
@@ -39,14 +43,13 @@
     <statusbarpanel id="aup-status"/>
   </statusbar> 
 
-  <!-- Thunderbird toolbar -->
+  <!-- toolbar -->
   <toolbarpalette id="MailToolbarPalette">
     <toolbarbutton id="aup-toolbarbutton" type="menu-button" insertafter="button-junk"
-        class="chromeclass-toolbar-additional"
-        oncontextmenu="aupCheckToolbarContext(event)"/>
+        class="chromeclass-toolbar-additional toolbarbutton-1"/>
   </toolbarpalette>
 
-  <!-- Thunderbird/SeaMonkey Mail tools menu -->
+  <!-- tools menu -->
   <menupopup id="taskPopup">
     <menuitem id="aup-menuitem" insertafter="downloadmgr,javaScriptConsole"/>
   </menupopup>

@@ -33,6 +33,8 @@ my @files = ();
 my $installManifest = fixupFile(readFile("install.rdf"));
 push @files, ["install.rdf", $installManifest];
 
+push @files, ["icon.png", readFile("icon.png")] if -f "icon.png";
+
 my $cleanManifest = $installManifest;
 $cleanManifest =~ s/<(\w+:)?targetApplication>.*?<\/\1targetApplication>//gs;
 $cleanManifest =~ s/<(\w+:)?requires>.*?<\/\1requires>//gs;
@@ -46,9 +48,10 @@ my $id = $2;
 my $chromeManifest = fixupFile(readFile("chrome.manifest"));
 my $baseURL = cwd;
 $baseURL =~ s/\\/\//g;
-$baseURL = "file:///$baseURL/chrome";
-$chromeManifest =~ s~jar:chrome/\w+\.jar!~$baseURL~g;
-$chromeManifest =~ s~^content ~content   mochikit $baseURL/content/mochitest/\n$&~m if -d "chrome/content/mochitest";
+$baseURL = "file:///$baseURL";
+$chromeManifest =~ s~jar:chrome/\w+\.jar!~$baseURL/chrome~g;
+$chromeManifest =~ s~^\s*resource\s+\S+\s+~$&$baseURL/~gmi;
+$chromeManifest =~ s~^content ~content   mochikit $baseURL/chrome/content/mochitest/\n$&~m if -d "chrome/content/mochitest";
 
 push @files, ["chrome.manifest", $chromeManifest];
 
@@ -140,6 +143,7 @@ sub fixupFile
   my $str = shift;
 
   $str =~ s/{{VERSION}}/$version/g;
+  $str =~ s/{{BUILD}}//g;
   $str =~ s/^.*{{LOCALE}}.*$/
     my @result = ();
     my $template = $&;

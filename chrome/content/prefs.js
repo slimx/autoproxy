@@ -15,7 +15,7 @@
  *
  * The Initial Developer of the Original Code is
  * Wladimir Palant.
- * Portions created by the Initial Developer are Copyright (C) 2006-2008
+ * Portions created by the Initial Developer are Copyright (C) 2006-2009
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -29,13 +29,7 @@
 
 const prefRoot = "extensions.autoproxy.";
 
-var gObjtabClass = "";
-for (let i = 0; i < 20; i++)
-  gObjtabClass += String.fromCharCode("a".charCodeAt(0) + Math.random() * 26);
-
 var prefService = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefService);
-
-var ScriptableInputStream = Components.Constructor("@mozilla.org/scriptableinputstream;1", "nsIScriptableInputStream", "init");
 
 var prefs = {
   lastVersion: null,
@@ -103,12 +97,16 @@ var prefs = {
       this.currentVersion = aup.getInstalledVersion();
       this.save();
     }
+
+    // Add observers for pref changes
+    prefs.addObservers();
   },
 
   // Loads a pref and stores it as a property of the object
   loadPref: function(pref) {
     try {
-      if(["customProxy","fallBackProxy","defaultProxy"].indexOf(pref[0])>-1) this[pref[0]] = decodeURI(this.branch["get" + pref[1] + "Pref"](pref[0]));
+      if(["customProxy", "fallbackProxy", "defaultProxy"].indexOf(pref[0]) > -1)
+        this[pref[0]] = decodeURI( this.branch["get" + pref[1] + "Pref"](pref[0]) );
       else this[pref[0]] = this.branch["get" + pref[1] + "Pref"](pref[0]);
     }
     catch (e) {
@@ -120,8 +118,9 @@ var prefs = {
   // Saves a property of the object into the corresponding pref
   savePref: function(pref) {
     try {
-      if(["customProxy","fallBackProxy","defaultProxy"].indexOf(pref[0])>-1) this.branch["set" + pref[1] + "Pref"](pref[0], encodeURI(this[pref[0]]));
-      else this.branch["set" + pref[1] + "Pref"](pref[0], this[pref[0]]);
+      if(["customProxy", "fallbackProxy", "defaultProxy"].indexOf(pref[0]) > -1)
+        this.branch["set" + pref[1] + "Pref"]( pref[0], encodeURI(this[pref[0]]) );
+      else this.branch["set" + pref[1] + "Pref"]( pref[0], this[pref[0]] );
     }
     catch (e) {}
   },
@@ -129,9 +128,8 @@ var prefs = {
   // Reloads the preferences
   reload: function() {
     // Load data from prefs.js
-    for each (var pref in this.prefList)
-      this.loadPref(pref);
-
+    for (let i = 0; i < this.prefList.length; i++)
+      this.loadPref(this.prefList[i]);
 
     // Fire pref listeners
     for each (var listener in this.listeners)
@@ -142,8 +140,8 @@ var prefs = {
   save: function() {
     this.disableObserver = true;
 
-    for each (var pref in this.prefList)
-      this.savePref(pref);
+    for (let i = 0; i < this.prefList.length; i++)
+      this.savePref(this.prefList[i]);
 
     this.disableObserver = false;
 
@@ -183,5 +181,4 @@ var prefs = {
   QueryInterface: XPCOMUtils.generateQI([Ci.nsISupportsWeakReference, Ci.nsIObserver])
 };
 
-prefs.addObservers();
 aup.prefs = prefs;

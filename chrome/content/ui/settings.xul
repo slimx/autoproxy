@@ -17,7 +17,7 @@
    -
    - The Initial Developer of the Original Code is
    - Wladimir Palant.
-   - Portions created by the Initial Developer are Copyright (C) 2006-2008
+   - Portions created by the Initial Developer are Copyright (C) 2006-2009
    - the Initial Developer. All Rights Reserved.
    -
    - Contributor(s):
@@ -56,7 +56,7 @@
 <script type="application/x-javascript;version=1.7" src="settings.js"/>
 <script type="application/x-javascript;version=1.7" src="findbar.js"/>
 
-<keyset id="autoProxyKeys">
+<keyset id="AutoProxyKeys">
   <key id="synchsubscription-key" key="t" modifiers="accel"/>
   <key id="synchsubscriptions-key" key="t" modifiers="accel,shift" command="synchsubscriptions-command"/>
   <key id="import-key" key="i" modifiers="accel" command="import-command"/>
@@ -95,7 +95,7 @@
 </commandset>
 
 <popupset id="aupPopups">
-  <popup id="listitem-context" onpopupshowing="return fillContext()">
+  <menupopup id="listitem-context" onpopupshowing="return fillContext()">
     <menuitem id="context-synchsubscription" label="&context.synchsubscription.label;" oncommand="synchSubscription(event.shiftKey)" key="synchsubscription-key" />
     <menuitem id="context-editsubscription" label="&context.editsubscription.label;..." oncommand="editFilter('subscription')" key="edit-key"/>
     <menuitem id="context-edit" label="&context.edit.label;" oncommand="editFilter('filter')" key="edit-key"/>
@@ -112,15 +112,8 @@
     <menuseparator/>
     <menuitem id="context-movegroupup" label="&context.movegroupup.label;" oncommand="treeView.moveSubscription(true)" key="movegroupup-key"/>
     <menuitem id="context-movegroupdown" label="&context.movegroupdown.label;" oncommand="treeView.moveSubscription(false)" key="movegroupdown-key"/>
-    <menuseparator/>
-    <menu id="context-selectProxy" label="&context.switchSpecialProxy;">
-        <menupopup id="selectProxy-popup" onpopupshowing="fillProxyMenu()">
-            <menuitem label="&context.switchSpecialProxyDefault;" type="radio" id="useDefaultProxy" value="" name="selectProxy-rg" oncommand="changeFilterProxy(event)"/>
-            <menuseparator/>
-        </menupopup>
-    </menu>
-  </popup>
-  <popup id="treecols-context" onpopupshowing="fillViewPopup('context-')"/>
+  </menupopup>
+  <menupopup id="treecols-context" onpopupshowing="fillViewPopup('context-')"/>
   <tooltip id="tree-tooltip" onpopupshowing="return showTreeTooltip(event)"/>
 </popupset>
 
@@ -163,7 +156,6 @@
       <menupopup id="view-popup" onpopupshowing="fillViewPopup('')">
         <menuitem id="view-filter" label="&filter.column;" accesskey="&filter.accesskey;" type="checkbox" disabled="true"/>
         <menuitem id="view-slow" label="&slow.column;" accesskey="&slow.accesskey;" type="checkbox" oncommand="toggleColumn('col-slow')"/>
-        <menuitem id="view-special" label="&proxy.column;" type="checkbox" oncommand="toggleColumn('col-specialProxy')"/>
         <menuitem id="view-enabled" label="&enabled.column;" accesskey="&enabled.accesskey;" type="checkbox" oncommand="toggleColumn('col-enabled')"/>
         <menuitem id="view-hitcount" label="&hitcount.column;" accesskey="&hitcount.accesskey;" type="checkbox" oncommand="toggleColumn('col-hitcount')"/>
         <menuitem id="view-lasthit" label="&lasthit.column;" accesskey="&lasthit.accesskey;" type="checkbox" oncommand="toggleColumn('col-lasthit')"/>
@@ -185,34 +177,33 @@
     </menu>
     <menu id="options-menu" label="&options.label;" accesskey="&options.accesskey;">
       <menupopup id="options-popup" onpopupshowing="fillOptionsPopup()">
-        <menuitem id="mode-auto" label="&mode.auto.label;" accesskey="&mode.auto.accesskey;" type="radio" oncommand="switchToMode('auto')"/>
-        <menuitem id="mode-global" label="&mode.global.label;" accesskey="&mode.global.accesskey;" type="radio" oncommand="switchToMode('global')"/>
-        <menuitem id="mode-disabled" label="&mode.disabled.label;" accesskey="&mode.disabled.accesskey;" type="radio" oncommand="switchToMode('disabled')"/>
+        <menuitem id="mode-auto" label="&mode.auto.label;" accesskey="&mode.auto.accesskey;" type="radio" oncommand="proxy.switchToMode('auto')"/>
+        <menuitem id="mode-global" label="&mode.global.label;" accesskey="&mode.global.accesskey;" type="radio" oncommand="proxy.switchToMode('global')"/>
+        <menuitem id="mode-disabled" label="&mode.disabled.label;" accesskey="&mode.disabled.accesskey;" type="radio" oncommand="proxy.switchToMode('disabled')"/>
         <menuseparator/>
         <menuitem id="showintoolbar" label="&showintoolbar.label;" accesskey="&showintoolbar.accesskey;" type="checkbox" oncommand="togglePref('showintoolbar')"/>
         <menuitem id="showinstatusbar" label="&showinstatusbar.label;" accesskey="&showinstatusbar.accesskey;" type="checkbox" oncommand="togglePref('showinstatusbar')"/>
         <menuseparator/>
         <menu label="&changeStatusClickBehaviour.label;">
-            <menupopup onpopupshowing="fillClickBehaviourPopup(event)" id="fuck">
-                <menuitem name="changeStatusClickBehaviour" label="&changeClickBehaviour_context;" oncommand="changeClickBehaver(0)" type="radio"/>
-                <menuitem name="changeStatusClickBehaviour" label="&changeClickBehaviour_proxyable;" oncommand="changeClickBehaver(1)" type="radio"/>
-                <menuitem name="changeStatusClickBehaviour" label="&changeClickBehaviour_preference;" oncommand="changeClickBehaver(2)" type="radio"/>
-                <menuitem name="changeStatusClickBehaviour" label="&changeClickBehaviour_quickAdd;" oncommand="changeClickBehaver(3)" type="radio"/>
-                <menuitem name="changeStatusClickBehaviour" label="&changeClickBehaviour_cycleProxy;" oncommand="changeClickBehaver(4)" type="radio"/>
-                <menuitem name="changeStatusClickBehaviour" label="&changeClickBehaviour_proxyMenu;" oncommand="changeClickBehaver(5)" type="radio"/>
-            </menupopup>
+          <menupopup onpopupshowing="fillClickBehaviourPopup(event)">
+            <menuitem name="changeStatusClickBehaviour" label="&changeClickBehaviour_context;" oncommand="changeClickBehaver(0)" type="radio"/>
+            <menuitem name="changeStatusClickBehaviour" label="&changeClickBehaviour_proxyable;" oncommand="changeClickBehaver(1)" type="radio"/>
+            <menuitem name="changeStatusClickBehaviour" label="&changeClickBehaviour_preference;" oncommand="changeClickBehaver(2)" type="radio"/>
+            <menuitem name="changeStatusClickBehaviour" label="&changeClickBehaviour_quickAdd;" oncommand="changeClickBehaver(3)" type="radio"/>
+            <menuitem name="changeStatusClickBehaviour" label="&changeClickBehaviour_cycleProxy;" oncommand="changeClickBehaver(4)" type="radio"/>
+            <menuitem name="changeStatusClickBehaviour" label="&changeClickBehaviour_proxyMenu;" oncommand="changeClickBehaver(5)" type="radio"/>
+          </menupopup>
         </menu>
         <menu label="&changeToolbarClickBehaviour.label;">
-            <menupopup onpopupshowing="fillClickBehaviourPopup(event,true)">
-                <menuitem name="changeToolbarClickBehaviour" label="&changeClickBehaviour_context;" oncommand="changeClickBehaver(0,true)" type="radio"/>
-                <menuitem name="changeToolbarClickBehaviour" label="&changeClickBehaviour_proxyable;" oncommand="changeClickBehaver(1,true)" type="radio"/>
-                <menuitem name="changeToolbarClickBehaviour" label="&changeClickBehaviour_preference;" oncommand="changeClickBehaver(2,true)" type="radio"/>
-                <menuitem name="changeToolbarClickBehaviour" label="&changeClickBehaviour_quickAdd;" oncommand="changeClickBehaver(3,true)" type="radio"/>
-                <menuitem name="changeToolbarClickBehaviour" label="&changeClickBehaviour_cycleProxy;" oncommand="changeClickBehaver(4,true)" type="radio"/>
-                <menuitem name="changeToolbarClickBehaviour" label="&changeClickBehaviour_proxyMenu;" oncommand="changeClickBehaver(5,true)" type="radio"/>
-            </menupopup>
+          <menupopup onpopupshowing="fillClickBehaviourPopup(event, true)">
+            <menuitem name="changeToolbarClickBehaviour" label="&changeClickBehaviour_context;" oncommand="changeClickBehaver(0,true)" type="radio"/>
+            <menuitem name="changeToolbarClickBehaviour" label="&changeClickBehaviour_proxyable;" oncommand="changeClickBehaver(1,true)" type="radio"/>
+            <menuitem name="changeToolbarClickBehaviour" label="&changeClickBehaviour_preference;" oncommand="changeClickBehaver(2,true)" type="radio"/>
+            <menuitem name="changeToolbarClickBehaviour" label="&changeClickBehaviour_quickAdd;" oncommand="changeClickBehaver(3,true)" type="radio"/>
+            <menuitem name="changeToolbarClickBehaviour" label="&changeClickBehaviour_cycleProxy;" oncommand="changeClickBehaver(4,true)" type="radio"/>
+            <menuitem name="changeToolbarClickBehaviour" label="&changeClickBehaviour_proxyMenu;" oncommand="changeClickBehaver(5,true)" type="radio"/>
+          </menupopup>
         </menu>
-
       </menupopup>
     </menu>
     <menu id="help-menu" label="&help.label;" accesskey="&help.accesskey;">
@@ -240,8 +231,6 @@
         <treecol id="col-filter" label="&filter.column;" primary="true" flex="10" persist="width ordinal sortDirection hidden"/>
         <splitter class="tree-splitter"/>
         <treecol id="col-slow" label="!" flex="0" width="16" persist="width ordinal sortDirection hidden"/>
-        <splitter class="tree-splitter"/>
-        <treecol id="col-specialProxy" label="&proxy.column;" flex="0" persist="width ordinal sortDirection hidden" width="75"/>
         <splitter class="tree-splitter"/>
         <treecol id="col-enabled" label="&enabled.column;" flex="0" persist="width ordinal sortDirection hidden"/>
         <splitter class="tree-splitter"/>

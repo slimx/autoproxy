@@ -15,7 +15,7 @@
  *
  * The Initial Developer of the Original Code is
  * Wladimir Palant.
- * Portions created by the Initial Developer are Copyright (C) 2006-2008
+ * Portions created by the Initial Developer are Copyright (C) 2006-2009
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -44,12 +44,14 @@ var synchronizer =
   init: function()
   {
     let me = this;
-    let timer = createTimer(function()
+    let callback = function()
     {
-      timer.delay = 3600000;
+      me.timer.delay = 3600000;
       me.checkSubscriptions();
-    }, 300000);
-    timer.type = timer.TYPE_REPEATING_SLACK;
+    };
+
+    this.timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+    this.timer.initWithCallback(callback, 300000, Ci.nsITimer.TYPE_REPEATING_SLACK);
   },
 
   /**
@@ -214,7 +216,7 @@ var synchronizer =
     subscription.nextURL = null;
 
     let curVersion = aup.getInstalledVersion();
-    let loadFrom = (newURL || url).replace(/%VERSION%/, "ABP" + curVersion);
+    let loadFrom = (newURL || url).replace(/%VERSION%/, "AUP" + curVersion);
 
     let request = null;
     try {
@@ -261,6 +263,12 @@ var synchronizer =
 
           if (oldEventSink)
             oldEventSink.onChannelRedirect(oldChannel, newChannel, flags);
+        },
+
+        asyncOnChannelRedirect: function(oldChannel, newChannel, flags, cb)
+        {
+          this.onChannelRedirect(oldChannel, newChannel, flags);
+          cb.onRedirectVerifyCallback(0);
         }
       }
     } catch (e) {}
@@ -346,6 +354,8 @@ var synchronizer =
         for (let key in subscription)
           newSubscription[key] = subscription[key];
 
+        delete Subscription.knownSubscriptions[subscription.url];
+        newSubscription.oldSubscription = subscription;
         subscription = newSubscription;
         subscription.url = url;
 
@@ -357,6 +367,7 @@ var synchronizer =
         filterStorage.updateSubscriptionFilters(subscription, newFilters);
       else
         filterStorage.triggerSubscriptionObservers("updateinfo", [subscription]);
+      delete subscription.oldSubscription;
 
       filterStorage.saveToDisk();
     };
@@ -374,5 +385,4 @@ var synchronizer =
   }
 };
 
-synchronizer.init();
 aup.synchronizer = synchronizer;

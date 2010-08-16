@@ -17,7 +17,7 @@
    -
    - The Initial Developer of the Original Code is
    - Wladimir Palant.
-   - Portions created by the Initial Developer are Copyright (C) 2006-2008
+   - Portions created by the Initial Developer are Copyright (C) 2006-2009
    - the Initial Developer. All Rights Reserved.
    -
    - Contributor(s):
@@ -33,7 +33,7 @@
 <dialog
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
   title="&dialog.title;"
-  id="autoProxyAboutWindow"
+  id="AutoProxyAboutWindow"
   windowtype="aup:about"
   onload="fillInVersion()"
   buttons="accept">
@@ -42,9 +42,9 @@
 <script type="application/x-javascript;version=1.7" src="about.js"/>
 
 <description id="title" value="&caption.title;"/>
-<hbox align="baseline">
+<hbox align="start">
   <label control="version" value="&version.title;"/>
-  <textbox id="version" class="plain" readonly="true" tabindex="-1"/>
+  <textbox id="version" flex="1" class="plain" readonly="true" tabindex="-1"/>
 </hbox>
 
 <groupbox id="mainGroup">
@@ -62,10 +62,11 @@
   <vbox id="contributorsBox">
     <description value="Wladimir Palant - The Author of Adblock Plus"/>
     <spacer height="15"/>
+    <description value="slimx - Co-developer"/>
     <description value="blogtd@blogtd.org - Logo designer"/>
-    <description value="@easthero - The first tweet &amp; blog report about AutoProxy"/>
-    <description value="@jimmy_xu_wrk - @AutoProxy Twitter &amp; gfwList maintainer"/>
-    <description value="@Ratoo - @AutoProxy Twitter account &amp; gfwList maintainer"/>
+    <description value="easthero - The first tweet &amp; blog report about AutoProxy"/>
+    <description value="jimmy_xu_wrk - @AutoProxy Twitter &amp; gfwList maintainer"/>
+    <description value="Ratoo - @AutoProxy Twitter account &amp; gfwList maintainer"/>
     <spacer height="15"/>
     <description value="Blackdire - Simplified Chinese translation of Adblock Plus"/>
     <description value="Edgard Dias Magalhaes - Brazilian Portuguese translation"/>

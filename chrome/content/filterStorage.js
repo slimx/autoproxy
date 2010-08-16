@@ -15,7 +15,7 @@
  *
  * The Initial Developer of the Original Code is
  * Wladimir Palant.
- * Portions created by the Initial Developer are Copyright (C) 2006-2008
+ * Portions created by the Initial Developer are Copyright (C) 2006-2009
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -78,6 +78,16 @@ var filterStorage =
   filterObservers: [],
 
   /**
+   * Initializes the component, e.g. triggers the initial load from disk.
+   */
+  init: function()
+  {
+    this.loadFromDisk();
+    Cc["@mozilla.org/observer-service;1"].getService(Ci.nsIObserverService)
+                                         .addObserver(this, "browser:purge-session-history", true);
+  },
+
+  /**
    * Adds an observer for subscription changes (addition, deletion)
    * @param {function(String, Array of Subscription)} observer
    */
@@ -138,11 +148,12 @@ var filterStorage =
    * Calls filter observers after a change
    * @param {String} action change code ("add", "remove", "enable", "disable", "hit")
    * @param {Array of Filter} filters the change applies to
+   * @param additionalData optional additional data, depends on change code
    */
-  triggerFilterObservers: function(action, filters)
+  triggerFilterObservers: function(action, filters, additionalData)
   {
     for each (let observer in this.filterObservers)
-      observer(action, filters);
+      observer(action, filters, additionalData);
   },
 
   /**
@@ -233,30 +244,41 @@ var filterStorage =
   /**
    * Adds a user-defined filter to the list
    * @param {Filter} filter
+   * @param {Filter} insertBefore   filter to insert before (if possible)
    * @param {Boolean} silent  if true, no observers will be triggered (to be used when filter list is reloaded)
    */
-  addFilter: function(filter, silent)
+  addFilter: function(filter, insertBefore, silent)
   {
     let subscription = null;
-    for each (let s in this.subscriptions)
+    if (!subscription)
     {
-      if (s instanceof SpecialSubscription && s.isFilterAllowed(filter))
+      for each (let s in this.subscriptions)
       {
-        if (s.filters.indexOf(filter) >= 0)
-          return;
+        if (s instanceof SpecialSubscription && s.isFilterAllowed(filter))
+        {
+          if (s.filters.indexOf(filter) >= 0)
+            return;
 
-        if (!subscription || s.priority > subscription.priority)
-          subscription = s;
+          if (!subscription || s.priority > subscription.priority)
+            subscription = s;
+        }
       }
     }
 
     if (!subscription)
       return;
 
+    let insertIndex = -1;
+    if (insertBefore)
+      insertIndex = subscription.filters.indexOf(insertBefore);
+
     filter.subscriptions.push(subscription);
-    subscription.filters.push(filter);
+    if (insertIndex >= 0)
+      subscription.filters.splice(insertIndex, 0, filter);
+    else
+      subscription.filters.push(filter);
     if (!silent)
-      this.triggerFilterObservers("add", [filter]);
+      this.triggerFilterObservers("add", [filter], insertBefore);
   },
 
   /**
@@ -298,13 +320,7 @@ var filterStorage =
     filter.hitCount++;
     filter.lastHit = Date.now();
 
-    /**
-     * this trigger will result in crash mainly because of (surmise):
-     *   aupReloadPrefs @ browserWindow.js
-     * disable this trigger impacts upon some features, but not a big problem:
-     *   onFilterChange @ settings.js
-     */
-    // this.triggerFilterObservers("hit", [filter]);
+    this.triggerFilterObservers("hit", [filter]);
   },
 
   /**
@@ -332,6 +348,8 @@ var filterStorage =
    */
   loadFromDisk: function()
   {
+    timeLine.enter("Entered filterStorage.loadFromDisk()");
+
     this.subscriptions = [];
     this.knownSubscriptions = {__proto__: null};
 
@@ -362,6 +380,8 @@ var filterStorage =
     if (!this.file)
       dump("AutoProxy: Failed to resolve filter file location from extensions.autoproxy.patternsfile preference\n");
 
+    timeLine.log("done locating patterns.ini file");
+
     let stream = null;
     try
     {
@@ -389,6 +409,8 @@ var filterStorage =
       stream.close();
     }
 
+    timeLine.log("done parsing file");
+
     // Add missing special subscriptions if necessary
     for each (let specialSubscription in ["~il~", "~wl~", "~fl~", "~eh~"])
     {
@@ -406,13 +428,13 @@ var filterStorage =
       {
         filter = Filter.fromText(filter);
         if (filter)
-          this.addFilter(filter, true);
+          this.addFilter(filter, null, true);
       }
     }
 
-    timeLine.log("* loaded from disk");
+    timeLine.log("load complete, calling observers");
     this.triggerSubscriptionObservers("reload", this.subscriptions);
-    timeLine.log("* called subscription observers (reload)");
+    timeLine.leave("filterStorage.loadFromDisk() done");
   },
 
   /**
@@ -516,6 +538,8 @@ var filterStorage =
     if (!this.file)
       return;
 
+    timeLine.enter("Entered filterStorage.saveToDisk()");
+
     try {
       this.file.normalize();
     } catch (e) {}
@@ -539,6 +563,8 @@ var filterStorage =
       dump("AutoProxy: failed to create file " + tempFile.path + ": " + e + "\n");
       return;
     }
+
+    timeLine.log("created temp file");
 
     const maxBufLength = 1024;
     let buf = ["# AutoProxy preferences", "version=" + this.formatVersion];
@@ -578,6 +604,7 @@ var filterStorage =
         }
       }
     }
+    timeLine.log("saved filter data");
 
     // Save subscriptions
     for each (let subscription in this.subscriptions)
@@ -586,13 +613,14 @@ var filterStorage =
       subscription.serialize(buf);
       if (subscription.filters.length)
       {
-        buf.push("", "[Subscription filters]");
+        buf.push("", "[Subscription filters]")
         subscription.serializeFilters(buf);
       }
 
       if (buf.length > maxBufLength && !writeBuffer())
         return;
     }
+    timeLine.log("saved subscription data");
 
     try {
       stream.writeString(buf.join(lineBreak) + lineBreak);
@@ -606,6 +634,7 @@ var filterStorage =
       catch (e2) {}
       return;
     }
+    timeLine.log("finalized file write");
 
     if (this.file.exists()) {
       // Check whether we need to backup the file
@@ -647,6 +676,18 @@ var filterStorage =
     }
 
     tempFile.moveTo(this.file.parent, this.file.leafName);
-  }
+    timeLine.log("created backups and renamed temp file");
+    timeLine.leave("filterStorage.saveToDisk() done");
+  },
+
+  observe: function(subject, topic, data)
+  {
+    if (topic == "browser:purge-session-history" && prefs.clearStatsOnHistoryPurge)
+    {
+      this.resetHitCounts();
+      this.saveToDisk();
+    }
+  },
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsISupportsWeakReference, Ci.nsIObserver])
 };
 aup.filterStorage = filterStorage;

@@ -7,6 +7,12 @@ sub new
 {
   my ($class, $params) = @_;
 
+  unless (exists($params->{build}))
+  {
+    $params->{build} = `git describe --tags`;
+    $params->{build} =~ s/\W//gs;
+  }
+
   my $self = bless($params, $class);
 
   return $self;
@@ -88,6 +94,7 @@ sub cp
       s/\r//g;
       s/^((?:  )+)/"\t" x (length($1)\/2)/e;
       s/\{\{VERSION\}\}/$self->{version}/g if $extendedTextMode;
+      s/\{\{BUILD\}\}/$self->{build}/g if $extendedTextMode;
       if ($extendedTextMode && /\{\{LOCALE\}\}/)
       {
         my $loc = "";
@@ -99,6 +106,11 @@ sub cp
         }
         $_ = $loc;
       }
+
+      # if ($self->{devbuild} && $fromFile =~ /\binstall\.rdf$/ && /^(\s*)<em:version>/)
+      # {
+      #  $_ .= "$1<em:updateURL>https://autoproxy.org/devbuilds/update.rdf</em:updateURL>\n";
+      # }
 
       $_ = $self->{postprocess_line}->($fromFile, $_) if exists $self->{postprocess_line};
 
@@ -256,7 +268,7 @@ sub makeJAR
 
   chdir('tmp');
   $self->fixLocales();
-  print `zip -rX0 $jarFile @include`;
+  system('zip', '-rqXD0', $jarFile, @include);
   chdir('..');
 
   rename("tmp/$jarFile", "$jarFile");
@@ -408,8 +420,28 @@ sub makeXPI
     }
   }
 
+  if (-f '.signature')
+  {
+    my $signData = $self->readFile(".signature");
+    my ($signtool) = ($signData =~ /^signtool=(.*)/mi);
+    my ($certname) = ($signData =~ /^certname=(.*)/mi);
+    my ($dbdir) = ($signData =~ /^dbdir=(.*)/mi);
+    my ($dbpass) = ($signData =~ /^dbpass=(.*)/mi);
+
+    system($signtool, '-k', $certname, '-d', $dbdir, '-p', $dbpass, 'tmp');
+
+    # Add signature files to list and make sure zigbert.rsa is always compressed first
+    opendir(local *METADIR, 'tmp/META-INF');
+    unshift @files, map {"META-INF/$_"} sort {
+      my $aValue = ($a eq 'zigbert.rsa' ? -1 : 0);
+      my $bValue = ($b eq 'zigbert.rsa' ? -1 : 0);
+      $aValue <=> $bValue;
+    } grep {!/^\./} readdir(METADIR);
+    closedir(METADIR);
+  }
+
   chdir('tmp');
-  print `zip -rX9 ../temp_xpi_file.xpi @files`;
+  system('zip', '-rqDX9', '../temp_xpi_file.xpi', @files);
   chdir('..');
 
   $self->fixZipPermissions("temp_xpi_file.xpi") if $^O =~ /Win32/i;

@@ -1,29 +1,5 @@
-<!-- ***** BEGIN LICENSE BLOCK *****
-   - Version: MPL 1.1
-   -
-   - The contents of this file are subject to the Mozilla Public License Version
-   - 1.1 (the "License"); you may not use this file except in compliance with
-   - the License. You may obtain a copy of the License at
-   - http://www.mozilla.org/MPL/
-   -
-   - Software distributed under the License is distributed on an "AS IS" basis,
-   - WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-   - for the specific language governing rights and limitations under the
-   - License.
-   -
-   - The Original Code is Adblock Plus.
-   -
-   - The Initial Developer of the Original Code is
-   - Wladimir Palant.
-   - Portions created by the Initial Developer are Copyright (C) 2006-2008
-   - the Initial Developer. All Rights Reserved.
-   -
-   - Contributor(s):
-   -
-   - ***** END LICENSE BLOCK ***** -->
-
 <!ENTITY status.tooltip         "Status:">
-<!ENTITY defaultProxy.tooltip         "Default proxy:">
+<!ENTITY defaultProxy.tooltip   "Default proxy:">
 <!ENTITY blocked.tooltip        "Proxyed items on this page:">
 <!ENTITY filters.tooltip        "Most active rules:">
 
@@ -40,15 +16,14 @@
 <!ENTITY sidebar.title          "Proxyable items on current page">
 
 <!ENTITY settings.label         "Preferences">
-<!ENTITY settings.accesskey     "F">
-<!ENTITY opensidebar.label      "Open proxyable items">
-<!ENTITY opensidebar.accesskey  "B">
+<!ENTITY settings.accesskey     "P">
+<!ENTITY opensidebar.label      "Proxyable items">
+<!-- Note: This access key should usually be the same as closesidebar.accesskey. It is the same menu item with different label depending on whether the sidebar is currently open.-->
+<!ENTITY opensidebar.accesskey  "V">
 <!ENTITY closesidebar.label     "Close proxyable items">
-<!ENTITY closesidebar.accesskey "B">
-<!ENTITY whitelist.site.label   "Disable proxy on --">
+<!-- Note: This access key should usually be the same as opensidebar.accesskey. It is the same menu item with different label depending on whether the sidebar is currently open.-->
+<!ENTITY closesidebar.accesskey "V">
 
 <!ENTITY objecttab.title        "Proxy">
 <!ENTITY objecttab.tooltip      "Click here to proxy this object with AutoProxy">
-<!ENTITY switchProxy.label "Switch default proxy">
-<!ENTITY showCurrentProxy.label "Change default proxy to:">
-
+<!ENTITY switchProxy.label      "Default proxy: ">

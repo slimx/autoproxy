@@ -19,13 +19,13 @@
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
- * 2009: Wang Congming <lovelywcm@gmail.com> modified for AutoProxy.
+ * 2009-2010: Wang Congming <lovelywcm@gmail.com> modified for AutoProxy.
  *
  * ***** END LICENSE BLOCK ***** */
 
-var aupHideImageManager;
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
-var proxyService = Cc["@mozilla.org/network/protocol-proxy-service;1"].getService(Ci.nsIProtocolProxyService);
+var RequestList = aup.RequestList;
 
 /**
  * List of event handers to be registered. For each event handler the element ID,
@@ -37,19 +37,15 @@ let eventHandlers = [
   ["aup-status-popup", "popupshowing", aupFillPopup],
   ["aup-toolbar-popup", "popupshowing", aupFillPopup],
   ["aup-command-settings", "command", function() { aup.openSettingsDialog(); }],
-  ["aup-command-sidebar", "command", aupToggleSidebar],
-  ["aup-command-togglesitewhitelist", "command", function() { toggleFilter(siteWhitelist); }],
-  ["aup-command-toggleshowintoolbar", "command", function() { aupTogglePref("showintoolbar"); }],
-  ["aup-command-toggleshowinstatusbar", "command", function() { aupTogglePref("showinstatusbar"); }],
-  ["aup-command-modeauto", "command", function() { switchToMode('auto'); }],
-  ["aup-command-modeglobal", "command", function() { switchToMode('global'); }],
-  ["aup-command-modedisabled", "command", function() { switchToMode('disabled'); }],
+  ["aup-command-sidebar", "command", toggleSidebar],
+  ["aup-command-contextmenu", "command", function(e) {
+    if (e.eventPhase == e.AT_TARGET) E("aup-status-popup").openPopupAtScreen(window.screen.width/2, window.screen.height/2, false); }],
+  ["aup-command-modeauto", "command", function() { proxy.switchToMode('auto'); }],
+  ["aup-command-modeglobal", "command", function() { proxy.switchToMode('global'); }],
+  ["aup-command-modedisabled", "command", function() { proxy.switchToMode('disabled'); }],
   ["aup-status", "click", aupClickHandler],
-  ["aup-toolbarbutton", "click", function(event){if(event.button==1)aupClickHandler(event)}],
-  ["aup-toolbarbutton", "command", function(event) { if (event.eventPhase == event.AT_TARGET) aupCommandHandler(event); }]
-
-  // TODO: ?
-  //["aup-toolbarbutton", "click", function(event) { if (event.eventPhase == event.AT_TARGET && event.button == 1) aupTogglePref("enabled"); }],
+  ["aup-toolbarbutton", "command", aupClickHandler],
+  ["aup-toolbarbutton", "click", function(e) { if (e.button == 1) aupClickHandler(e); }]
 ];
 
 /**
@@ -58,23 +54,80 @@ let eventHandlers = [
 let currentlyShowingInToolbar = prefs.showintoolbar;
 
 /**
- * Filter corresponding with "disable on site" menu item (set in aupFillPopup()).
- * @type Filter
- */
-let siteWhitelist = null;
-
-/**
  * Progress listener detecting location changes and triggering status updates.
  * @type nsIWebProgress
  */
 let progressListener = null;
 
+/**
+ * Object implementing app-specific methods.
+ */
+let aupHooks = E("aup-hooks");
+
+/**
+ * Window of the detached list of blockable items (might be null or closed).
+ * @type nsIDOMWindow
+ */
+let detachedSidebar = null;
+
 aupInit();
 
 function aupInit() {
+  // Initialize app hooks
+  for each (let hook in ["getBrowser", "addTab", "getToolbox", "getDefaultToolbar", "toolbarInsertBefore"])
+  {
+    let handler = aupHooks.getAttribute(hook);
+    if (handler)
+      aupHooks[hook] = new Function(handler);
+  }
+
   // Process preferences
-  window.aupDetachedSidebar = null;
   aupReloadPrefs();
+
+  // Copy the menu from status bar icon to the toolbar
+  function fixId(node)
+  {
+    if (node.nodeType != node.ELEMENT_NODE)
+      return node;
+
+    if ("id" in node && node.id)
+      node.id = node.id.replace(/aup-status/, "aup-toolbar");
+
+    for (var child = node.firstChild; child; child = child.nextSibling)
+      fixId(child);
+
+    return node;
+  }
+  function copyMenu(to)
+  {
+    if (!to || !to.firstChild)
+      return;
+
+    to = to.firstChild;
+    var from = E("aup-status-popup");
+    for (var node = from.firstChild; node; node = node.nextSibling)
+      to.appendChild(fixId(node.cloneNode(true)));
+  }
+  let paletteButton = aupGetPaletteButton();
+  copyMenu(E("aup-toolbarbutton"));
+  if (paletteButton != E("aup-toolbarbutton"))
+    copyMenu(paletteButton);
+
+  // Palette button elements aren't reachable by ID, create a lookup table
+  let paletteButtonIDs = {};
+  if (paletteButton)
+  {
+    function getElementIds(element)
+    {
+      if (element.hasAttribute("id"))
+        paletteButtonIDs[element.getAttribute("id")] = element;
+
+      for (let child = element.firstChild; child; child = child.nextSibling)
+        if (child.nodeType == Ci.nsIDOMNode.ELEMENT_NODE)
+          getElementIds(child);
+    }
+    getElementIds(paletteButton);
+  }
 
   // Register event listeners
   window.addEventListener("unload", aupUnload, false);
@@ -83,13 +136,16 @@ function aupInit() {
     let element = E(id);
     if (element)
       element.addEventListener(event, handler, false);
+
+    if (id in paletteButtonIDs)
+      paletteButtonIDs[id].addEventListener(event, handler, false);
   }
 
   prefs.addListener(aupReloadPrefs);
   filterStorage.addFilterObserver(aupReloadPrefs);
   filterStorage.addSubscriptionObserver(aupReloadPrefs);
 
-  let browser = aup.getBrowserInWindow(window);
+  let browser = aupHooks.getBrowser();
   browser.addEventListener("click", handleLinkClick, true);
 
   let dummy = function() {};
@@ -98,7 +154,8 @@ function aupInit() {
     onProgressChange: dummy,
     onSecurityChange: dummy,
     onStateChange: dummy,
-    onStatusChange: dummy
+    onStatusChange: dummy,
+    QueryInterface: XPCOMUtils.generateQI([Ci.nsIWebProgressListener, Ci.nsISupportsWeakReference])
   };
   browser.addProgressListener(progressListener);
 
@@ -111,59 +168,50 @@ function aupInit() {
   } catch(e) {}
 
   // First run actions
-  if (!("doneFirstRunActions" in prefs) && aup.versionComparator.compare(prefs.lastVersion, "0.0") <= 0)
+  if (!("doneFirstRunActions" in prefs))
   {
     // Don't repeat first run actions if new window is opened
     prefs.doneFirstRunActions = true;
 
-    // Add aup icon to toolbar if necessary
-    aup.createTimer(aupInstallInToolbar, 0);
-
     // Show subscriptions dialog if the user doesn't have any subscriptions yet
-    aup.createTimer(aupShowSubscriptions, 0);
+    if (aup.versionComparator.compare(prefs.lastVersion, "0.0") <= 0)
+      aup.runAsync(aupShowSubscriptions);
   }
 
-  // Move toolbar button to a correct location in Mozilla/SeaMonkey
-  var button = E("aup-toolbarbutton");
-  if (button && button.parentNode.id == "nav-bar-buttons") {
-    var ptf = E("bookmarks-ptf");
-    ptf.parentNode.insertBefore(button, ptf);
+  // Window-specific first run actions
+  if (!("doneFirstRunActions " + window.location.href in prefs))
+  {
+    // Don't repeat first run actions for this window any more
+    prefs["doneFirstRunActions " + window.location.href] = true;
+
+    let lastVersion = aupHooks.getAttribute("currentVersion") || "0.0";
+    if (lastVersion != prefs.currentVersion)
+    {
+      aupHooks.setAttribute("currentVersion", prefs.currentVersion);
+      document.persist("aup-hooks", "currentVersion");
+
+      let needInstall = (aup.versionComparator.compare(lastVersion, "0.0") <= 0);
+      if (!needInstall)
+      {
+        // Before version 1.1 we didn't add toolbar icon in SeaMonkey, do it now
+        needInstall = aup.versionComparator.compare(lastVersion, "1.1") < 0 &&
+                      Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULAppInfo).ID == "{92650c4d-4b8e-4d2a-b7eb-24ecf4f6b63a}";
+      }
+
+      // Add AUP icon to toolbar if necessary
+      if (needInstall)
+        aup.runAsync(aupInstallInToolbar);
+    }
   }
-
-  // Copy the menu from status bar icon to the toolbar
-  var fixId = function(node) {
-    if (node.nodeType != node.ELEMENT_NODE)
-      return node;
-
-    if ("id" in node && node.id)
-      node.id = node.id.replace(/aup-status/, "aup-toolbar");
-
-    for (var child = node.firstChild; child; child = child.nextSibling)
-      fixId(child);
-
-    return node;
-  };
-  var copyMenu = function(to) {
-    if (!to || !to.firstChild)
-      return;
-
-    to = to.firstChild;
-    var from = E("aup-status-popup");
-    for (var node = from.firstChild; node; node = node.nextSibling)
-      to.appendChild(fixId(node.cloneNode(true)));
-  };
-  copyMenu(E("aup-toolbarbutton"));
-  copyMenu(aupGetPaletteButton());
-
-  aup.createTimer(aupInitImageManagerHiding, 0);
 }
 
 function aupUnload()
 {
   prefs.removeListener(aupReloadPrefs);
+  prefs.removeListener(proxy.reloadPrefs);
   filterStorage.removeFilterObserver(aupReloadPrefs);
   filterStorage.removeSubscriptionObserver(aupReloadPrefs);
-  aup.getBrowserInWindow(window).removeProgressListener(progressListener);
+  aupHooks.getBrowser().removeProgressListener(progressListener);
 }
 
 function aupReloadPrefs() {
@@ -187,8 +235,8 @@ function aupReloadPrefs() {
     else
       element.hidden = !prefs.showintoolbar;
 
-    // HACKHACK: Show status bar icon in SeaMonkey Mail and Prism instead of toolbar icon
-    if (element.hidden && (element.tagName == "statusbarpanel" || element.tagName == "vbox") && (E("msgToolbar") || window.location.host == "webrunner"))
+    // HACKHACK: Show status bar icon instead of toolbar icon if the application doesn't have a toolbar icon
+    if (element.hidden && element.tagName == "statusbarpanel" && !aupHooks.getDefaultToolbar)
       element.hidden = !prefs.showintoolbar;
 
     if (currentlyShowingInToolbar != prefs.showintoolbar)
@@ -219,67 +267,42 @@ function aupReloadPrefs() {
   }
 
   updateElement(aupGetPaletteButton());
-
-  // Refresh defaultProxy, dPDs: default Proxy Details
-  var dPDs = ( prefs.defaultProxy || prefs.knownProxy.split("$")[0] ).split(";");
-  if ( dPDs[1] == "" ) dPDs[1] = "127.0.0.1";
-  if ( dPDs[3] == "" ) dPDs[3] = "http";
-  // newProxyInfo(type, host, port, socks_remote_dns, failoverTimeout, failoverProxy);
-  policy.defaultProxy = proxyService.newProxyInfo(dPDs[3], dPDs[1], dPDs[2], 1, 0, null);
-
-  // Refresh fallBackProxy(fBP)
-  var fBP = prefs.fallBackProxy.split(";");
-  if ( fBP[1] == "" ) fBP[1] = "127.0.0.1";
-  if ( fBP[3] == "" ) fBP[3] = "http";
-  policy.fallBackProxy = proxyService.newProxyInfo(fBP[3], fBP[1], fBP[2], 1, 0, null);
-
-  // Register / Unregister proxy filter & refresh shouldProxy() for specified mode.
-  if ( state == "disabled" ) proxyService.unregisterFilter(policy);
-  else {
-    if ( state == "global" ) policy.shouldProxy = function() { return true; };
-    else policy.shouldProxy = policy.autoMatching;
-
-    proxyService.unregisterFilter(policy);
-    proxyService.registerFilter(policy, 0);
-  }
-
-    aup.proxyMapString = {};
-    aup.proxyMap = {};
-    aup.proxyNameArray=[];
-    var proxies = prefs.customProxy.split("$");
-    if (proxies == "") proxies = prefs.knownProxy.split("$");
-    for each (let proxy in proxies) {
-        if (proxy == "") continue;
-        var list = proxy.split(";");
-        if ( list[1] == "" ) list[1] = "127.0.0.1";
-        if ( list[3] == "" ) list[3] = "http";
-        aup.proxyMap[list[0]] = proxyService.newProxyInfo(list[3], list[1], list[2], 1, 0, null);
-        aup.proxyMapString[list[0]] = proxy;
-        aup.proxyNameArray.push(list[0]);
-    }
-
-    if (prefs.middleClick_global)
-        aup.middleClick = ["auto","global","disabled"];
-    else aup.middleClick = ["auto","disabled"];
 }
 
-function aupInitImageManagerHiding() {
-  if (!aup || typeof aupHideImageManager != "undefined")
-    return;
+/**
+ * Tests whether image manager context menu entry should be hidden with user's current preferences.
+ * @return Boolean
+ */
+function shouldHideImageManager()
+{
+  if (typeof arguments.callee._result != "undefined")
+    return arguments.callee._result;
 
-  aupHideImageManager = false;
-  if (prefs.hideimagemanager && "@mozilla.org/permissionmanager;1" in Cc) {
-    try {
-      aupHideImageManager = true;
-      var permissionManager = Cc["@mozilla.org/permissionmanager;1"].getService(Ci.nsIPermissionManager);
-      var enumerator = permissionManager.enumerator;
-      while (aupHideImageManager && enumerator.hasMoreElements()) {
-        var item = enumerator.getNext().QueryInterface(Ci.nsIPermission);
+  let result = false;
+  if (prefs.hideimagemanager && "@mozilla.org/permissionmanager;1" in Cc)
+  {
+    try
+    {
+      result = true;
+      let enumerator = Cc["@mozilla.org/permissionmanager;1"].getService(Ci.nsIPermissionManager).enumerator;
+      while (enumerator.hasMoreElements())
+      {
+        let item = enumerator.getNext().QueryInterface(Ci.nsIPermission);
         if (item.type == "image" && item.capability == Ci.nsIPermissionManager.DENY_ACTION)
-          aupHideImageManager = false;
+        {
+          result = false;
+          break;
+        }
       }
-    } catch(e) {}
+    }
+    catch(e)
+    {
+      result = false;
+    }
   }
+
+  arguments.callee._result = result;
+  return result;
 }
 
 function aupConfigureKey(key, value) {
@@ -369,8 +392,9 @@ function handleLinkClick(/**Event*/ event)
 }
 
 // Finds the toolbar button in the toolbar palette
-function aupGetPaletteButton() {
-  var toolbox = E("navigator-toolbox") || E("mail-toolbox");
+function aupGetPaletteButton()
+{
+  let toolbox = (aupHooks.getToolbox ? aupHooks.getToolbox() : null);
   if (!toolbox || !("palette" in toolbox) || !toolbox.palette)
     return null;
 
@@ -382,17 +406,15 @@ function aupGetPaletteButton() {
 }
 
 // Check whether we installed the toolbar button already
-function aupInstallInToolbar() {
-  if (!E("aup-toolbarbutton")) {
-    var insertBeforeBtn = null;
-    var toolbar = E("nav-bar");
-    if (!toolbar) {
-      insertBeforeBtn = "button-junk";
-      toolbar = E("mail-bar");
-    }
-
-    if (toolbar && "insertItem" in toolbar) {
-      var insertBefore = (insertBeforeBtn ? E(insertBeforeBtn) : null);
+function aupInstallInToolbar()
+{
+  let tb = E("aup-toolbarbutton");
+  if (!tb || tb.parentNode.localName == "toolbarpalette")
+  {
+    let toolbar = (aupHooks.getDefaultToolbar ? aupHooks.getDefaultToolbar() : null);
+    let insertBefore = (aupHooks.toolbarInsertBefore ? aupHooks.toolbarInsertBefore() : null);
+    if (toolbar && "insertItem" in toolbar)
+    {
       if (insertBefore && insertBefore.parentNode != toolbar)
         insertBefore = null;
 
@@ -400,33 +422,6 @@ function aupInstallInToolbar() {
 
       toolbar.setAttribute("currentset", toolbar.currentSet);
       document.persist(toolbar.id, "currentset");
-
-      // HACKHACK: Make sure icon is added to both main window and message window in Thunderbird
-      var override = null;
-      if (window.location.href == "chrome://messenger/content/messenger.xul")
-        override = "chrome://messenger/content/messageWindow.xul#mail-bar";
-      else if (window.location.href == "chrome://messenger/content/messageWindow.xul")
-        override = "chrome://messenger/content/messenger.xul#mail-bar";
-
-      if (override) {
-        try {
-          var rdf = Cc["@mozilla.org/rdf/rdf-service;1"].getService(Ci.nsIRDFService);
-          var localstore = rdf.GetDataSource("rdf:local-store");
-          var resource = rdf.GetResource(override);
-          var arc = rdf.GetResource("currentset");
-          var target = localstore.GetTarget(resource, arc, true);
-          var currentSet = (target ? target.QueryInterface(Ci.nsIRDFLiteral).Value : E('mail-bar').getAttribute("defaultset"));
-
-          if (/\bbutton-junk\b/.test(currentSet))
-            currentSet = currentSet.replace(/\bbutton-junk\b/, "aup-toolbarbutton,button-junk");
-          else
-            currentSet = currentSet + ",aup-toolbarbutton";
-
-          if (target)
-            localstore.Unassert(resource, arc, target, true);
-          localstore.Assert(resource, arc, rdf.GetLiteral(currentSet), true);
-        } catch (e) {}
-      }
     }
   }
 }
@@ -438,7 +433,9 @@ function aupShowSubscriptions()
   for each (let subscription in filterStorage.subscriptions)
     if (subscription instanceof aup.DownloadableSubscription)
       return;
-  window.openDialog("chrome://autoproxy/content/ui/tip_subscriptions.xul", "_blank", "chrome,centerscreen,resizable,dialog=no");
+
+  if (!aupHooks.addTab || aupHooks.addTab("chrome://autoproxy/content/ui/tip_subscriptions.xul") === false)
+    window.openDialog("chrome://autoproxy/content/ui/tip_subscriptions.xul", "_blank", "chrome,centerscreen,resizable,dialog=no");
 }
 
 function aupFillTooltip(event) {
@@ -461,19 +458,20 @@ function aupFillTooltip(event) {
   var state = event.target.getAttribute("curstate");
   var statusDescr = E("aup-tooltip-status");
   statusDescr.setAttribute("value", aup.getString(state + "_tooltip"));
+
   var proxyDescr = E("aup-tooltip-proxy");
-  proxyDescr.setAttribute("value", prefs.defaultProxy.split(";")[0]);
+  proxyDescr.setAttribute("value", proxy.nameOfDefaultProxy);
+  proxyDescr.hidden = E("aup-tooltip-proxy-label").hidden = (state == "disabled");
 
   var activeFilters = [];
   E("aup-tooltip-blocked-label").hidden = (state != "auto");
   E("aup-tooltip-blocked").hidden = (state != "auto");
   if (state == "auto") {
     var locations = [];
-    var rootData = aup.getDataForWindow(window);
-    var rootCurrentData = rootData.getLocation(6,aup.getBrowserInWindow(window).currentURI.spec);
-    if(rootCurrentData)
-        locations.push(rootCurrentData);
-    var data = aup.getDataForWindow(aup.getBrowserInWindow(window).contentWindow);
+    var rootData = RequestList.getDataForWindow(window);
+    var rootCurrentData = rootData.getLocation(6, aupHooks.getBrowser().currentURI.spec);
+    if (rootCurrentData) locations.push(rootCurrentData);
+    var data = RequestList.getDataForWindow(aupHooks.getBrowser().contentWindow);
     data.getAllLocations(locations);
 
     var blocked = 0;
@@ -526,20 +524,19 @@ function aupFillTooltip(event) {
  */
 function getCurrentLocation() /**nsIURI*/
 {
-  if ("currentHeaderData" in window && "content-base" in currentHeaderData)
+  if ("currentHeaderData" in window && "content-base" in window.currentHeaderData)
   {
     // Thunderbird blog entry
     return aup.unwrapURL(window.currentHeaderData["content-base"].headerValue);
   }
-  else if ("gDBView" in window)
+  else if ("currentHeaderData" in window && "from" in window.currentHeaderData)
   {
     // Thunderbird mail/newsgroup entry
     try
     {
-      let msgHdr = gDBView.hdrForFirstSelectedMessage;
       let headerParser = Cc["@mozilla.org/messenger/headerparser;1"].getService(Ci.nsIMsgHeaderParser);
-      let emailAddress = headerParser.extractHeaderAddressMailboxes(null, msgHdr.author);
-      return "mailto:" + emailAddress.replace(/^[\s"]+/, "").replace(/[\s"]+$/, "").replace(/\s/g, "%20");
+      let emailAddress = headerParser.extractHeaderAddressMailboxes(window.currentHeaderData.from.headerValue);
+      return aup.makeURL("mailto:" + emailAddress.replace(/^[\s"]+/, "").replace(/[\s"]+$/, "").replace(/\s/g, "%20"));
     }
     catch(e)
     {
@@ -549,12 +546,13 @@ function getCurrentLocation() /**nsIURI*/
   else
   {
     // Regular browser
-    return aup.unwrapURL(aup.getBrowserInWindow(window).contentWindow.location.href);
+    return aup.unwrapURL(aupHooks.getBrowser().contentWindow.location.href);
   }
 }
 
 // Fills the context menu on the status bar
-function aupFillPopup(event) {
+function aupFillPopup(event)
+{
   let popup = event.target;
 
   // Not at-target call, ignore
@@ -568,119 +566,77 @@ function aupFillPopup(event) {
     if (list[i].id && /\-(\w+)$/.test(list[i].id))
       elements[RegExp.$1] = list[i];
 
+
+  //
+  // Fill "Preference" & "Sidebar" Menu Items
+  //
   var sidebarOpen = aupIsSidebarOpen();
   elements.opensidebar.hidden = sidebarOpen;
   elements.closesidebar.hidden = !sidebarOpen;
 
-  var whitelistItemSite = elements.whitelistsite;
-  whitelistItemSite.hidden = true;
 
-  var whitelistSeparator = whitelistItemSite.nextSibling;
-  while (whitelistSeparator.nodeType != whitelistSeparator.ELEMENT_NODE)
-    whitelistSeparator = whitelistSeparator.nextSibling;
+  //
+  // Fill "Default Proxy" Menu Items
+  //
+  var menu = popup.getElementsByTagName('menu')[0];
+  while (menu.previousSibling.tagName != 'menuseparator')
+    menu.parentNode.removeChild(menu.previousSibling);
 
-  let location = getCurrentLocation();
-  if (location && policy.isProxyableScheme(location))
-  {
-    let host = location.host.replace(/^www\./, "");
+  var popup = proxy.validConfigs.length > 3 ? menu.firstChild : null;
+  makeProxyItems(popup, menu);
 
-    if (host)
-    {
-      siteWhitelist = aup.Filter.fromText("@@||" + host + "^$document");
-      whitelistItemSite.setAttribute("checked", isUserDefinedFilter(siteWhitelist));
-      whitelistItemSite.setAttribute("label", whitelistItemSite.getAttribute("labeltempl").replace(/--/, host));
-      whitelistItemSite.hidden = false;
-    }
-  }
-  whitelistSeparator.hidden = whitelistItemSite.hidden;
+  menu.hidden = !popup;
 
-  elements.showintoolbar.setAttribute("checked", prefs.showintoolbar);
-  elements.showinstatusbar.setAttribute("checked", prefs.showinstatusbar);
 
-  var defAction = (popup.tagName == "menupopup" || document.popupNode.id == "aup-toolbarbutton" ? prefs.defaulttoolbaraction : prefs.defaultstatusbaraction);
-  elements.opensidebar.setAttribute("default", defAction == 1);
-  elements.closesidebar.setAttribute("default", defAction == 1);
-  elements.settings.setAttribute("default", defAction == 2);
+  //
+  // Fill "Enable Proxy On" Menu Items
+  //
+  var rootData = RequestList.getDataForWindow(window).getURLInfo(aupHooks.getBrowser().currentURI.spec);
+  enableProxyOn(elements.modeauto, rootData);
 
+
+  //
+  // Fill "Proxy Mode" Menu Items
+  //
   elements.modeauto.setAttribute("checked", "auto" == prefs.proxyMode);
   elements.modeglobal.setAttribute("checked", "global" == prefs.proxyMode);
   elements.modedisabled.setAttribute("checked", "disabled" == prefs.proxyMode);
-
-    var menu = null;
-    if (popup.id == "aup-toolbar-popup")
-        menu = E("aup-toolbar-switchProxy");
-    else if (popup.id = "aup-status-popup")
-        menu = E("aup-status-switchProxy");
-    else return;
-    var popup = document.createElement("menupopup");
-    popup.id = "options-switchProxy";
-    if (menu.children.length == 1)
-        menu.removeChild(menu.children[0]);
-    menu.appendChild(popup);
-
-    for (var p in aup.proxyMapString)
-    {
-        var item = document.createElement('menuitem');
-        item.setAttribute('type', 'radio');
-        item.setAttribute('label', p);
-        item.setAttribute('value', p);
-        item.setAttribute('name', 'radioGroup-switchProxy');
-        item.addEventListener("command", switchDefaultProxy, false);
-        if (prefs.defaultProxy.split(';')[0] == p)
-            item.setAttribute('checked', true);
-        popup.appendChild(item);
-    }
-}
-
-// Only show context menu on toolbar button in vertical toolbars
-function aupCheckToolbarContext(event) {
-  var toolbox = event.target;
-  while (toolbox && toolbox.tagName != "toolbox")
-    toolbox = toolbox.parentNode;
-
-  if (!toolbox || toolbox.getAttribute("vertical") != "true")
-    return;
-
-  event.target.open = true;
-  event.preventDefault();
 }
 
 function aupIsSidebarOpen() {
   // Test whether detached sidebar window is open
-  if (window.aupDetachedSidebar && !window.aupDetachedSidebar.closed)
+  if (detachedSidebar && !detachedSidebar.closed)
     return true;
 
   var sidebar = E("aup-sidebar");
   return (sidebar ? !sidebar.hidden : false);
 }
 
-function aupToggleSidebar() {
-  if (window.aupDetachedSidebar && !window.aupDetachedSidebar.closed)
-    window.aupDetachedSidebar.close();
-  else {
+function toggleSidebar()
+{
+  if (detachedSidebar && !detachedSidebar.closed)
+  {
+    detachedSidebar.close();
+    detachedSidebar = null;
+  }
+  else
+  {
     var sidebar = E("aup-sidebar");
-    if (sidebar && (!prefs.detachsidebar || !sidebar.hidden)) {
+    if (sidebar && (!prefs.detachsidebar || !sidebar.hidden))
+    {
       E("aup-sidebar-splitter").hidden = !sidebar.hidden;
       E("aup-sidebar-browser").setAttribute("src", sidebar.hidden ? "chrome://autoproxy/content/ui/sidebar.xul" : "about:blank");
       sidebar.hidden = !sidebar.hidden;
+      if (sidebar.hidden)
+        aupHooks.getBrowser().contentWindow.focus();
     }
     else
-      window.aupDetachedSidebar = window.openDialog("chrome://autoproxy/content/ui/sidebarDetached.xul", "_blank", "chrome,resizable,dependent,dialog=no,width=600,height=300");
+      detachedSidebar = window.openDialog("chrome://autoproxy/content/ui/sidebarDetached.xul", "_blank", "chrome,resizable,dependent,dialog=no");
   }
 
   let menuItem = E("aup-blockableitems");
   if (menuItem)
     menuItem.setAttribute("checked", aupIsSidebarOpen());
-}
-
-/**
- * Checks whether the specified filter exists as a user-defined filter in the list.
- *
- * @param {String} filter   text representation of the filter
- */
-function isUserDefinedFilter(/**Filter*/ filter)  /**Boolean*/
-{
-  return filter.subscriptions.some(function(subscription) { return subscription instanceof aup.SpecialSubscription; });
 }
 
 // Toggles the value of a boolean pref
@@ -689,129 +645,94 @@ function aupTogglePref(pref) {
   prefs.save();
 }
 
-/**
- * If the given filter is already in user's list, removes it from the list. Otherwise adds it.
- */
-function toggleFilter(/**Filter*/ filter)
+// Handle clicks on statusbar/toolbar panel
+function aupClickHandler(e)
 {
-  if (isUserDefinedFilter(filter))
-    filterStorage.removeFilter(filter);
-  else
-    filterStorage.addFilter(filter);
-  filterStorage.saveToDisk();
-}
-
-// Handle clicks on the statusbar panel
-function aupClickHandler(e) {
-  if (e.button == 0)
-    aupExecuteAction(prefs.defaultstatusbaraction,e);
-
-  // TODO: switch proxy mode: auto, global, disabled
-  else if (e.button == 1){
-      let index = aup.middleClick.indexOf(prefs.proxyMode);
-      prefs.proxyMode = aup.middleClick[(index + 1) % aup.middleClick.length];
-      prefs.save();
+  if (e.button == 1) {
+    prefs.proxyMode = proxy.mode[ (proxy.mode.indexOf(prefs.proxyMode)+1) % 3 ];
+    prefs.save();
   }
-  //  aupTogglePref("enabled");
-}
-
-function aupCommandHandler(e) {
-  if (prefs.defaulttoolbaraction == 0)
-    e.target.open = true;
-  else
-    aupExecuteAction(prefs.defaulttoolbaraction,e);
+  // e.button is undefined when left click on tool bar icon
+  else if (e.button != 2 && e.target.tagName != 'menuitem')
+    aupExecuteAction(e.target.tagName == 'image' ? prefs.defaultstatusbaraction : prefs.defaulttoolbaraction, e);
 }
 
 // Executes default action for statusbar/toolbar by its number
-function aupExecuteAction(action,e) {
-  // TODO: switch proxy mode: auto, global, disable
-  //else if (action == 3)
-  //  aupTogglePref("enabled");
-
-    switch (action)
-    {
-        case 0:
-            aupFillPopup(e);
-            break;
-        case 1://proxyable items
-            aupToggleSidebar();
-            break;
-        case 2://preference
-            aup.openSettingsDialog();
-            break;
-        case 3://quick add
-            break;
-        case 4://cycle default proxy
-            if (aup.proxyTipTimer)aup.proxyTipTimer.cancel();
-            var defaultProxy = prefs.defaultProxy.split(";")[0];
-            var index = aup.proxyNameArray.indexOf(defaultProxy);
-            var newIndex = (index + 1) % aup.proxyNameArray.length;
-            prefs.defaultProxy = aup.proxyMapString[aup.proxyNameArray[newIndex]];
-            prefs.save();
-            //show tooltip
-            let tooltip = E("showCurrentProxy");
-            let tooltipLabel = E("showCurrentProxyValue");
-            tooltipLabel.value = aup.proxyNameArray[newIndex];
-            if (e.screenX && e.screenY)
-                tooltip.openPopupAtScreen(e.screenX, e.screenY, false);
-            else
-                tooltip.openPopupAtScreen(e.target.boxObject.screenX, e.target.boxObject.screenY, false);
-            aup.proxyTipTimer = Components.classes["@mozilla.org/timer;1"].createInstance(Components.interfaces.nsITimer);
-            aup.proxyTipTimer.initWithCallback({notify:function() {
-                tooltip.hidePopup();
-            }}, 2500, Components.interfaces.nsITimer.TYPE_ONE_SHOT);
-            break;
-        case 5://default proxy menu
-            let popup = document.getElementById("aup-popup-switchProxy");
-            let length = popup.children.length;
-            for (let l = 0; l < length; l++)
-            {
-                popup.removeChild(popup.lastChild);
-            }
-            for (let p in aup.proxyMapString)
-            {
-                let item = document.createElement('menuitem');
-                item.setAttribute('type', 'radio');
-                item.setAttribute('label', p);
-                item.setAttribute('value', p);
-                item.setAttribute('name', 'radioGroup-switchProxy');
-                item.addEventListener("command", switchDefaultProxy, false);
-                if (prefs.defaultProxy.split(';')[0] == p)
-                    item.setAttribute('checked', true);
-                popup.appendChild(item);
-            }
-            if(e.screenX&&e.screenY)
-                popup.openPopupAtScreen(e.screenX, e.screenY, false);
-            else
-                popup.openPopupAtScreen(e.target.boxObject.screenX, e.target.boxObject.screenY, false);            
-            break;
-        default:
-            break;
-    }
+function aupExecuteAction(action, e)
+{
+  switch (action) {
+    case 0:
+      e.target.open = true;
+      break;
+    case 1:
+      toggleSidebar();
+      break;
+    case 2:
+      aup.openSettingsDialog();
+      break;
+    case 3: //quick add
+      break;
+    case 4: //cycle default proxy
+      if (aup.proxyTipTimer) aup.proxyTipTimer.cancel();
+      prefs.defaultProxy = ++prefs.defaultProxy % proxy.server.length;
+      if (prefs.defaultProxy == 0) prefs.defaultProxy = 1;
+      prefs.save();
+      //show tooltip
+      let tooltip = E("showCurrentProxy");
+      let tooltipLabel = E("showCurrentProxyValue");
+      tooltipLabel.value = proxy.nameOfDefaultProxy;
+      if (e.screenX && e.screenY)
+        tooltip.openPopupAtScreen(e.screenX, e.screenY, false);
+      else
+        tooltip.openPopupAtScreen(e.target.boxObject.screenX, e.target.boxObject.screenY, false);
+      aup.proxyTipTimer = Components.classes["@mozilla.org/timer;1"].createInstance(Components.interfaces.nsITimer);
+      aup.proxyTipTimer.initWithCallback( {notify:function(){tooltip.hidePopup();}}, 2000, Components.interfaces.nsITimer.TYPE_ONE_SHOT );
+      break;
+    case 5: //default proxy menu
+      let popup = E("aup-popup-switchProxy");
+      makeProxyItems(popup);
+      if (e.screenX && e.screenY) popup.openPopupAtScreen(e.screenX, e.screenY, false);
+      else popup.openPopupAtScreen(e.target.boxObject.screenX, e.target.boxObject.screenY, false);
+      break;
+    default:
+      break;
+  }
 }
 
-// Retrieves the image URL for the specified style property
-function aupImageStyle(computedStyle, property) {
-  var value = computedStyle.getPropertyCSSValue(property);
-  if (value instanceof Ci.nsIDOMCSSValueList && value.length >= 1)
-    value = value[0];
-  if (value instanceof Ci.nsIDOMCSSPrimitiveValue && value.primitiveType == Ci.nsIDOMCSSPrimitiveValue.CSS_URI)
-    return aup.unwrapURL(value.getStringValue()).spec;
-
-  return null;
-}
-
-/**
- * change default proxy
- * @param event
- */
 function switchDefaultProxy(event)
 {
-    var value = event.target.value;
-    if(prefs.defaultProxy.split(";")[0]!=value)
-    {
-        prefs.defaultProxy = aup.proxyMapString[value];
-        prefs.save();
-    }
+  var value = event.target.value;
+  if ( proxy.nameOfDefaultProxy != value ) {
+    prefs.defaultProxy = proxy.getName.indexOf(value);
+    prefs.save();
+  }
+}
 
+function makeProxyItems(popup, menu)
+{
+  if (popup)
+    while (popup.firstChild) popup.removeChild(popup.firstChild);
+
+  for each (let p in proxy.getName) {
+    let item = cE('menuitem');
+    item.setAttribute('type', 'radio');
+    item.setAttribute('label', p);
+    item.setAttribute('value', p);
+    item.setAttribute('name', 'radioGroup-switchProxy');
+    item.addEventListener("command", switchDefaultProxy, false);
+    if (proxy.nameOfDefaultProxy == p) item.setAttribute('checked', true);
+    if (popup)
+      popup.appendChild(item);
+    else
+      menu.parentNode.insertBefore(item, menu);
+  }
+
+  // use 'direct connect' as default proxy is confusing, so hide it
+  if (popup)
+    popup.firstChild.hidden = true;
+  else {
+    while (menu.previousSibling.tagName != 'menuseparator')
+      menu = menu.previousSibling;
+    menu.hidden = true;
+  }
 }

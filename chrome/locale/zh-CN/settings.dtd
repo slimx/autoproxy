@@ -91,11 +91,6 @@
 <!ENTITY context.disable.label "禁用">
 <!ENTITY apply.label "应用">
 <!ENTITY apply.accesskey "P">
-<!ENTITY context.switchSpecialProxy                  "选择代理">
-<!ENTITY context.switchSpecialProxyDefault                  "默认">
-<!ENTITY proxy.column                  "代理">
-<!ENTITY slow.column                     "Slow filters">
-<!ENTITY slow.accesskey                  "w">
 
 <!ENTITY changeStatusClickBehaviour.label "单击状态栏图标行为">
 <!ENTITY changeToolbarClickBehaviour.label "单击工具栏图标行为">
@@ -105,3 +100,5 @@
 <!ENTITY changeClickBehaviour_quickAdd "快速添加规则">
 <!ENTITY changeClickBehaviour_preference "首选项">
 <!ENTITY changeClickBehaviour_proxyable "可代理资源列表">
+<!ENTITY slow.column                     "慢规则">
+<!ENTITY slow.accesskey                  "w">

@@ -15,7 +15,7 @@
  *
  * The Initial Developer of the Original Code is
  * Wladimir Palant.
- * Portions created by the Initial Developer are Copyright (C) 2006-2008
+ * Portions created by the Initial Developer are Copyright (C) 2006-2009
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -25,4 +25,7 @@
 function fillInVersion() {
   var versionField = document.getElementById("version");
   versionField.value = aup.getInstalledVersion();
+
+  // Work-around for bug 494901, change align attribute to ensure correct positioning
+  versionField.parentNode.setAttribute("align", "baseline");
 }

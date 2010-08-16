@@ -15,7 +15,7 @@
  *
  * The Initial Developer of the Original Code is
  * Wladimir Palant.
- * Portions created by the Initial Developer are Copyright (C) 2006-2008
+ * Portions created by the Initial Developer are Copyright (C) 2006-2009
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -24,49 +24,18 @@
 
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 
-#patternGroup {
-  overflow: auto;
+#aup-toolbarbutton .toolbarbutton-icon
+{
+  margin-top: 5px;
 }
-
-#anchorGroup {
-  padding-left: 20px;
+#aup-toolbarbutton > .toolbarbutton-menubutton-stack > .toolbarbutton-menubutton-dropmarker
+{
+  margin-bottom: 0px;
 }
-
-#typeGroupLabel {
-  margin-top: 10px;
-}
-
-#typeGroup {
-  overflow: auto;
-  margin-bottom: 10px
-}
-
-:root:not([advancedMode="true"]) #options {
-  display: none;
-}
-
-#disabledWarning, #regexpWarning, #shortpatternWarning {
-  color: #E00000;
-}
-
-#disabledWarning > * {
-  margin: 0px;
-}
-
-.text-link {
-  font-size: 80%;
-  -moz-user-focus: ignore;
-}
-
-.help {
-  color: #0000E0;
-  border-bottom: 1px dotted #0000E0;
-  cursor: help;
-  margin: 0px;
-  padding: 0px;
-}
-
-tooltip {
-  /* Gecko 1.8.1 doesn't support multiline tooltips :-( */
-  max-width: none;
+@-moz-document domain("mail")
+{
+  #aup-toolbarbutton .toolbarbutton-menubutton-button
+  {
+    -moz-box-orient: vertical;
+  }
 }

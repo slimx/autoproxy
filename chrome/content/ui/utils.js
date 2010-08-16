@@ -31,6 +31,7 @@ const Cu = Components.utils;
 const aup = Components.classes["@mozilla.org/autoproxy;1"].createInstance().wrappedJSObject;
 const prefs = aup.prefs;
 const policy = aup.policy;
+const proxy = aup.proxy;
 const filterStorage = aup.filterStorage;
 const synchronizer = aup.synchronizer;
 
@@ -43,10 +44,9 @@ function E(id)
 }
 
 /**
- * Switch to specified proxy mode.
+ * Shortcut for document.createElementNS(element)
  */
-function switchToMode(mode)
+function cE(elmt)
 {
-  prefs.proxyMode = mode;
-  prefs.save();
+  return document.createElementNS("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul", elmt);
 }

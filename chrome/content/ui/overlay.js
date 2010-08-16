@@ -15,7 +15,7 @@
  *
  * The Initial Developer of the Original Code is
  * Wladimir Palant.
- * Portions created by the Initial Developer are Copyright (C) 2006-2008
+ * Portions created by the Initial Developer are Copyright (C) 2006-2009
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -33,4 +33,5 @@ window.addEventListener("load", function()
                          .getService(Components.interfaces.mozIJSSubScriptLoader)
   loader.loadSubScript("chrome://autoproxy/content/ui/utils.js", sandbox);
   loader.loadSubScript("chrome://autoproxy/content/ui/browserWindow.js", sandbox);
+  loader.loadSubScript("chrome://autoproxy/content/ui/enableProxyOn.js", sandbox);
 }, false);

@@ -17,7 +17,7 @@
    -
    - The Initial Developer of the Original Code is
    - Wladimir Palant.
-   - Portions created by the Initial Developer are Copyright (C) 2006-2008
+   - Portions created by the Initial Developer are Copyright (C) 2006-2009
    - the Initial Developer. All Rights Reserved.
    -
    - Contributor(s):
@@ -32,7 +32,8 @@
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
   id="aupDetachedSidebar"
   title="&detached.title;"
-  persist="screenX screenY width height sizemode">
+  persist="screenX screenY width height sizemode"
+  onclose="document.getElementById('aup-command-sidebar').doCommand(); return false;">
 
   <keyset id="detached-keyset">
     <key keycode="VK_ESCAPE" command="aup-command-sidebar"/> 
@@ -40,7 +41,7 @@
   </keyset>
 
   <commandset id="detached-commandset">
-    <command id="aup-command-sidebar" oncommand="window.close()"/>
+    <command id="aup-command-sidebar" oncommand="document.getElementById('sidebarFrame').contentWindow.doClose()"/>
   </commandset>
 
   <iframe src="sidebar.xul" id="sidebarFrame" flex="1"/>
