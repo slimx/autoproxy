@@ -2742,7 +2742,7 @@ let treeView = {
 
       let offset = 0;
       isCurrent = (subscription == currentSubscription && !currentFilter);
-      if (normalizeString(subscription.title).indexOf(text) >= 0)
+      if (subscription.title && normalizeString(subscription.title).indexOf(text) >= 0)
         selectMatch(subscription, offset);
       if (isCurrent)
         foundCurrent = true;
